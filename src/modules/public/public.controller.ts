@@ -1,0 +1,40 @@
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { PublicBookingService } from './public-booking.service';
+import { PartnersService } from '@/modules/partners/partners.service';
+import { Public } from '@/auth/decorators';
+import { SlotsQueryDto, PublicCreateBookingDto } from './dto/public-booking.dto';
+
+/**
+ * Unauthenticated, public-facing booking surface for the client app
+ * (reserva.am/p/:slug). Tighter rate limiting since it's open to the internet.
+ */
+@ApiTags('Public booking')
+@Public()
+@Controller('public/partners/:slug')
+export class PublicController {
+  constructor(
+    private readonly publicBooking: PublicBookingService,
+    private readonly partners: PartnersService,
+  ) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Public partner profile + catalog for the booking page' })
+  partner(@Param('slug') slug: string) {
+    return this.partners.getPublicBySlug(slug);
+  }
+
+  @Get('slots')
+  @ApiOperation({ summary: 'Available time slots for a service on a date' })
+  slots(@Param('slug') slug: string, @Query() q: SlotsQueryDto) {
+    return this.publicBooking.slots(slug, q);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('bookings')
+  @ApiOperation({ summary: 'Create a booking from the public page' })
+  create(@Param('slug') slug: string, @Body() dto: PublicCreateBookingDto) {
+    return this.publicBooking.createBooking(slug, dto);
+  }
+}

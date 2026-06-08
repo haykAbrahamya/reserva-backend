@@ -1,0 +1,380 @@
+// ─────────────────────────────────────────────────────────────
+// Reserva — multi-tenant salon booking platform
+// Postgres schema. Tenancy: every owned row carries partnerId.
+// IDs are app-generated UUIDv7 (time-ordered, index-friendly).
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ───────────────────────────────────────────────────
+
+enum UserRole {
+  admin
+  manager
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+  noshow
+}
+
+/// How a booking entered the system — useful for analytics + audit.
+enum BookingSource {
+  public // client booked themselves via /p/:slug
+  backoffice // created by an admin/manager
+}
+
+enum OtpChannel {
+  phone
+  email
+}
+
+enum Weekday {
+  mon
+  tue
+  wed
+  thu
+  fri
+  sat
+  sun
+}
+
+// ── Partner (tenant) ────────────────────────────────────────
+
+model Partner {
+  id   String @id
+  /// Public URL handle: reserva.am/p/:slug
+  slug String @unique
+  name String
+  /// Free-text category shown publicly, e.g. "Aesthetic clinic".
+  type String
+
+  // Branding
+  accent String // primary brand color (hex)
+
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  presentation PartnerPresentation?
+  locations    Location[]
+  services     Service[]
+  specialists  Specialist[]
+  bookings     Booking[]
+  clients      Client[]
+  users        User[]
+
+  @@index([active])
+  @@map("partners")
+}
+
+/// Public-facing marketing fields for the branded booking page. Split from
+/// Partner so the hot tenant row stays lean and these rarely-changing,
+/// publicly-served fields can be cached/served independently.
+model PartnerPresentation {
+  partnerId String  @id
+  tagline   String  @default("")
+  about     String  @default("")
+  hours     String  @default("") // human-readable summary, e.g. "Mon–Sat · 10:00–19:00"
+  rating    Decimal @default(0) @db.Decimal(2, 1)
+  reviews   Int     @default(0)
+  /// Hero gradient tints [from, to] + decorative gallery tiles, stored as JSON
+  /// since they're presentation-only and read as a blob.
+  heroTints Json    @default("[]")
+  gallery   Json    @default("[]")
+
+  updatedAt DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@map("partner_presentations")
+}
+
+// ── Location (branch) ───────────────────────────────────────
+
+model Location {
+  id        String @id
+  partnerId String
+  name      String
+  address   String
+  phone     String @default("")
+
+  /// Weekly opening hours: { mon: { enabled, start, end }, ... }. JSON because
+  /// it's always read/written as a whole and never queried by inner fields.
+  hours Json @default("{}")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  partner     Partner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  specialists Specialist[]
+  bookings    Booking[]
+  users       User[]
+
+  @@index([partnerId, deletedAt])
+  @@map("locations")
+}
+
+// ── Service ─────────────────────────────────────────────────
+
+model Service {
+  id        String  @id
+  partnerId String
+  name      String
+  category  String  @default("")
+  /// Stored in the smallest currency unit (AMD has no minor unit → whole drams).
+  price     Int
+  /// Duration in minutes.
+  duration  Int
+  active    Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  partner          Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  specialistLinks  SpecialistService[]
+  bookings         Booking[]
+
+  @@index([partnerId, deletedAt])
+  @@index([partnerId, active])
+  @@map("services")
+}
+
+// ── Specialist ──────────────────────────────────────────────
+
+model Specialist {
+  id         String  @id
+  partnerId  String
+  locationId String
+  name       String
+  title      String  @default("")
+  phone      String  @default("")
+  active     Boolean @default(true)
+
+  /// Recurring weekly schedule: { mon: { enabled, start, end }, ... }.
+  schedule Json @default("{}")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  partner   Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location  Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  services  SpecialistService[]
+  timeOff   SpecialistTimeOff[]
+  bookings  Booking[]
+
+  @@index([partnerId, deletedAt])
+  @@index([locationId, active])
+  @@map("specialists")
+}
+
+/// Join table: which services a specialist can perform (many-to-many).
+model SpecialistService {
+  specialistId String
+  serviceId    String
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([specialistId, serviceId])
+  @@index([serviceId])
+  @@map("specialist_services")
+}
+
+/// One-off, dated unavailability that overrides the weekly schedule.
+model SpecialistTimeOff {
+  id           String   @id
+  specialistId String
+  partnerId    String // denormalized for fast tenant-scoped queries
+  startAt      DateTime
+  endAt        DateTime
+  allDay       Boolean  @default(false)
+  reason       String?
+  createdById  String?
+
+  createdAt DateTime @default(now())
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  @@index([specialistId, startAt, endAt])
+  @@index([partnerId, startAt])
+  @@map("specialist_time_off")
+}
+
+// ── Client ──────────────────────────────────────────────────
+
+/// A customer of a partner. No client-facing auth — created/updated implicitly
+/// when a booking is made (deduped per partner on normalized phone). Powers the
+/// backoffice Clients page.
+model Client {
+  id        String  @id
+  partnerId String
+  name      String
+  /// Normalized (digits-only) phone — the per-partner identity key.
+  phone     String
+  email     String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partner  Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([partnerId, phone])
+  @@index([partnerId, name])
+  @@map("clients")
+}
+
+// ── Booking ─────────────────────────────────────────────────
+
+model Booking {
+  id           String        @id
+  partnerId    String
+  locationId   String
+  specialistId String
+  serviceId    String
+  clientId     String
+
+  /// Snapshot of client contact at time of booking (client row may change).
+  clientName  String
+  clientPhone String
+
+  startAt DateTime
+  endAt   DateTime
+  status  BookingStatus @default(confirmed)
+  source  BookingSource @default(backoffice)
+  notes   String?
+
+  /// Price captured at booking time (service price may change later).
+  priceAtBooking Int @default(0)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner    Partner    @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location   Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  // Calendar/list queries are almost always tenant + time-window scoped.
+  @@index([partnerId, startAt])
+  @@index([locationId, startAt])
+  @@index([specialistId, startAt])
+  @@index([clientId, startAt])
+  @@index([partnerId, status, startAt])
+  @@map("bookings")
+}
+
+// ── User (backoffice staff) ─────────────────────────────────
+
+model User {
+  id        String   @id
+  partnerId String
+  name      String
+  email     String
+  phone     String
+  role      UserRole @default(manager)
+  /// Managers are scoped to a single branch; admins have null (all locations).
+  locationId String?
+
+  passwordHash String
+  /// Force a password change after first login (managers created with an OTP).
+  mustChangePassword Boolean     @default(false)
+  otpChannel         OtpChannel?
+
+  active    Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  partner       Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location      Location?      @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  refreshTokens RefreshToken[]
+
+  // Login is by email OR phone, globally unique so the right tenant is found.
+  @@unique([email])
+  @@unique([phone])
+  @@index([partnerId, role])
+  @@map("users")
+}
+
+/// Hashed, rotatable refresh tokens. Enables logout + revoke-on-rotation.
+model RefreshToken {
+  id        String   @id
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ── Platform (internal-backoffice) ──────────────────────────
+
+/// Platform staff role. `owner` can manage other platform staff; `operator`
+/// can provision/manage partners but not other platform accounts.
+enum PlatformRole {
+  owner
+  operator
+}
+
+/// Internal-backoffice operator. NOT tied to a partner — this is Reserva's own
+/// staff who provision and manage partner tenants. Kept entirely separate from
+/// the tenant `User` table so platform and tenant auth never cross over.
+model PlatformUser {
+  id    String       @id
+  name  String
+  email String       @unique
+  role  PlatformRole @default(operator)
+
+  passwordHash       String
+  mustChangePassword Boolean @default(false)
+
+  active    Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  refreshTokens PlatformRefreshToken[]
+
+  @@index([active])
+  @@map("platform_users")
+}
+
+/// Hashed, rotatable refresh tokens for platform sessions.
+model PlatformRefreshToken {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("platform_refresh_tokens")
+}
