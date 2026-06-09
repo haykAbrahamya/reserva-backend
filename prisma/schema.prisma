@@ -305,15 +305,68 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner       Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  location      Location?      @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  refreshTokens RefreshToken[]
+  partner           Partner            @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location          Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  refreshTokens     RefreshToken[]
+  pushSubscriptions PushSubscription[]
+  notifications     Notification[]
 
   // Login is by email OR phone, globally unique so the right tenant is found.
   @@unique([email])
   @@unique([phone])
   @@index([partnerId, role])
   @@map("users")
+}
+
+/// Booking-related event types that produce notifications.
+enum NotificationType {
+  booking_created
+  booking_rescheduled
+  booking_cancelled
+  booking_confirmed
+  booking_completed
+  booking_noshow
+}
+
+/// In-app notification feed — ONE row per recipient user (so read/unread is
+/// per-user without a join). Low-volume + prunable. `data` carries render +
+/// deep-link info (clientName, service, time, bookingId).
+model Notification {
+  id        String           @id
+  userId    String
+  partnerId String
+  type      NotificationType
+  title     String
+  body      String
+  /// Structured payload for the UI: { bookingId, clientName, service, ... }.
+  data      Json             @default("{}")
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "my unread feed, newest first" is the hot query.
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}
+
+/// Web Push subscriptions (one user may have several — phone, laptop, …). Used
+/// to deliver booking notifications to logged-in backoffice staff.
+model PushSubscription {
+  id        String   @id
+  userId    String
+  /// Push service endpoint URL (unique per browser/device subscription).
+  endpoint  String   @unique
+  /// Encryption keys from the browser PushSubscription (for payload encryption).
+  p256dh    String
+  auth      String
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 /// Hashed, rotatable refresh tokens. Enables logout + revoke-on-rotation.

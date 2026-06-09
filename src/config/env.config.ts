@@ -29,6 +29,11 @@ const envSchema = z.object({
   /** Shared secret for internal-backoffice → partner provisioning endpoints. */
   INTERNAL_API_KEY: z.string().min(16),
 
+  /** Web Push (VAPID). Optional — if unset, push notifications self-disable. */
+  VAPID_PUBLIC_KEY: z.string().default(''),
+  VAPID_PRIVATE_KEY: z.string().default(''),
+  VAPID_SUBJECT: z.string().default('mailto:abrahamyan.hayk.03@gmail.com'),
+
   THROTTLE_TTL: z.coerce.number().int().positive().default(60),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
 });

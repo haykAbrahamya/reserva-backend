@@ -18,6 +18,7 @@ import { ClientsModule } from './modules/clients/clients.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PlatformModule } from './platform/platform.module';
 import { HealthController } from './health.controller';
 
@@ -46,6 +47,7 @@ import { HealthController } from './health.controller';
     BookingsModule,
     PublicModule,
     UsersModule,
+    NotificationsModule,
     PlatformModule,
   ],
   controllers: [HealthController],

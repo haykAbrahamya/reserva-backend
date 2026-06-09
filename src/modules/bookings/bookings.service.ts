@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, BookingSource } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientsService } from '@/modules/clients/clients.service';
+import { BookingNotifier } from '@/modules/notifications/booking-notifier.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
@@ -29,11 +30,15 @@ const BOOKING_INCLUDE = {
   location: { select: { id: true, name: true, address: true } },
 } satisfies Prisma.BookingInclude;
 
+/** A booking row with the joined refs (what every mutation returns). */
+type BookingWithRefs = Prisma.BookingGetPayload<{ include: typeof BOOKING_INCLUDE }>;
+
 @Injectable()
 export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clients: ClientsService,
+    private readonly notifier: BookingNotifier,
   ) {}
 
   // ── Queries ───────────────────────────────────────────────
@@ -119,7 +124,7 @@ export class BookingsService {
       timeOff,
     );
 
-    return this.runWithOverlapGuard(() =>
+    const booking = await this.runWithOverlapGuard<BookingWithRefs>(() =>
       this.prisma.$transaction(async (tx) => {
         const client = await this.clients.upsertByPhone(partnerId, dto.clientName, dto.clientPhone, tx);
         return tx.booking.create({
@@ -144,9 +149,20 @@ export class BookingsService {
         });
       }),
     );
+
+    // Best-effort notify admins + the branch's managers (never blocks the write).
+    // Skip the creator if it was a backoffice user (public bookings have none).
+    this.notifier.notify('created', booking, opts.createdById);
+    return booking;
   }
 
-  async update(partnerId: string, id: string, dto: UpdateBookingDto, scopeLocationId?: string | null) {
+  async update(
+    partnerId: string,
+    id: string,
+    dto: UpdateBookingDto,
+    scopeLocationId?: string | null,
+    actorId?: string,
+  ) {
     const existing = await this.get(partnerId, id, scopeLocationId);
 
     const specialistId = dto.specialistId ?? existing.specialistId;
@@ -170,7 +186,7 @@ export class BookingsService {
       assertBookingAllowed({ specialist, location, serviceId, startAt, endAt }, timeOff);
     }
 
-    return this.runWithOverlapGuard(() =>
+    const booking = await this.runWithOverlapGuard<BookingWithRefs>(() =>
       this.prisma.booking.update({
         where: { id },
         data: {
@@ -184,15 +200,36 @@ export class BookingsService {
         include: BOOKING_INCLUDE,
       }),
     );
+
+    // Notify only when the appointment actually moved (not on a notes-only edit).
+    if (dto.startAt !== undefined) this.notifier.notify('rescheduled', booking, actorId);
+    return booking;
   }
 
-  async setStatus(partnerId: string, id: string, status: BookingStatus, scopeLocationId?: string | null) {
+  async setStatus(
+    partnerId: string,
+    id: string,
+    status: BookingStatus,
+    scopeLocationId?: string | null,
+    actorId?: string,
+  ) {
     await this.get(partnerId, id, scopeLocationId);
-    return this.prisma.booking.update({
+    const booking = await this.prisma.booking.update({
       where: { id },
       data: { status },
       include: BOOKING_INCLUDE,
     });
+
+    // Map each status transition to a notification event (pending has none).
+    const statusEvent = {
+      cancelled: 'cancelled',
+      confirmed: 'confirmed',
+      completed: 'completed',
+      noshow: 'noshow',
+    } as const;
+    const event = statusEvent[status as keyof typeof statusEvent];
+    if (event) this.notifier.notify(event, booking, actorId);
+    return booking;
   }
 
   async remove(partnerId: string, id: string, scopeLocationId?: string | null) {

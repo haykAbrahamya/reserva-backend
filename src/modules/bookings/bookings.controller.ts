@@ -53,13 +53,13 @@ export class BookingsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Reschedule / reassign a booking' })
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateBookingDto) {
-    return this.bookings.update(user.partnerId, id, dto, user.locationId);
+    return this.bookings.update(user.partnerId, id, dto, user.locationId, user.id);
   }
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Change booking status (confirm, complete, cancel, no-show)' })
   setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateStatusDto) {
-    return this.bookings.setStatus(user.partnerId, id, dto.status, user.locationId);
+    return this.bookings.setStatus(user.partnerId, id, dto.status, user.locationId, user.id);
   }
 
   @Delete(':id')
