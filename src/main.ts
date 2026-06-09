@@ -49,9 +49,11 @@ async function bootstrap() {
     ) => {
       // Non-browser clients (curl, server-to-server) send no Origin — allow.
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (baseDomainRe?.test(origin)) return callback(null, true);
-      return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+      const ok =
+        allowedOrigins.includes(origin) || (baseDomainRe?.test(origin) ?? false);
+      // Disallowed: resolve without the CORS headers (browser blocks it) rather
+      // than throwing — throwing turns the OPTIONS preflight into a 500.
+      return callback(null, ok);
     },
     credentials: true,
   });
