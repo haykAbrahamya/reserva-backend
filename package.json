@@ -33,7 +33,7 @@
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.3.0",
     "@scalar/nestjs-api-reference": "^0.4.0",
-    "@sentry/node": "^10.57.0",
+    "@sentry/node": "10.56.0",
     "argon2": "^0.41.1",
     "helmet": "^8.0.0",
     "nestjs-zod": "^5.4.0",
