@@ -34,6 +34,17 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:abrahamyan.hayk.03@gmail.com'),
 
+  /** SMTP (Gmail) for transactional email. If unset, mail self-disables (logs). */
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_USER: z.string().default(''),
+  /** Gmail App Password (not the account password). */
+  SMTP_PASS: z.string().default(''),
+  MAIL_FROM: z.string().default('Reserva <abrahamyan.hayk.03@gmail.com>'),
+
+  /** Backoffice base URL — used to build the signup activation magic link. */
+  BACKOFFICE_URL: z.string().default('https://backoffice.reserva.am'),
+
   THROTTLE_TTL: z.coerce.number().int().positive().default(60),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
 });

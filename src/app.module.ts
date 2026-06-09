@@ -6,6 +6,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 
 import { validateEnv } from './config/env.config';
 import { PrismaModule } from './prisma/prisma.module';
+import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -19,6 +20,7 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SignupModule } from './modules/signup/signup.module';
 import { PlatformModule } from './platform/platform.module';
 import { HealthController } from './health.controller';
 
@@ -38,6 +40,7 @@ import { HealthController } from './health.controller';
       ],
     }),
     PrismaModule,
+    MailModule,
     AuthModule,
     PartnersModule,
     LocationsModule,
@@ -48,6 +51,7 @@ import { HealthController } from './health.controller';
     PublicModule,
     UsersModule,
     NotificationsModule,
+    SignupModule,
     PlatformModule,
   ],
   controllers: [HealthController],

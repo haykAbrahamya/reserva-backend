@@ -435,3 +435,37 @@ model PlatformRefreshToken {
   @@index([userId])
   @@map("platform_refresh_tokens")
 }
+
+// ── Self-serve signup (public) ──────────────────────────────
+
+/// A pending self-serve signup, created when someone starts a free trial on the
+/// marketing site. Holds the partner + admin details and a hashed magic-link
+/// token. On activation (link click) we create the real Partner + admin User
+/// atomically and delete/mark this row. Not yet a real tenant.
+model PendingRegistration {
+  id        String  @id
+  /// Hashed activation token (the raw token goes only in the emailed link).
+  tokenHash String  @unique
+
+  // Partner details
+  companyName String
+  companyType String
+  slug        String
+  accent      String
+
+  // Admin details
+  adminName    String
+  adminEmail   String
+  adminPhone   String
+  passwordHash String
+
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  // Uniqueness is enforced at creation against partners/users; these help
+  // dedupe repeated signups from the same email/slug.
+  @@index([adminEmail])
+  @@index([slug])
+  @@map("pending_registrations")
+}

@@ -58,6 +58,20 @@ export class AuthService {
     return { ...tokens, user: toPublicUser(user) };
   }
 
+  /**
+   * Issue a session for an already-trusted User (e.g. immediately after a
+   * verified self-serve signup activation). Skips password verification — the
+   * caller is responsible for having authenticated the user another way.
+   */
+  async loginTrustedUser(user: User): Promise<AuthResult> {
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() },
+    });
+    const tokens = await this.issueTokens(user);
+    return { ...tokens, user: toPublicUser(user) };
+  }
+
   async refresh(refreshToken: string): Promise<AuthResult> {
     const payload = await this.verifyRefresh(refreshToken);
     const tokenHash = hashToken(refreshToken);
