@@ -62,6 +62,10 @@ model Partner {
   // Branding
   accent String // primary brand color (hex)
 
+  /// When false (default), public bookings land as `pending` and staff must
+  /// confirm them manually. When true, public bookings are auto-confirmed.
+  autoConfirmBookings Boolean @default(false)
+
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

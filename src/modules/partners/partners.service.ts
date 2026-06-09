@@ -117,6 +117,9 @@ export class PartnersService {
           ...(rest.type !== undefined && { type: rest.type }),
           ...(rest.accent !== undefined && { accent: rest.accent }),
           ...(rest.active !== undefined && { active: rest.active }),
+          ...(rest.autoConfirmBookings !== undefined && {
+            autoConfirmBookings: rest.autoConfirmBookings,
+          }),
         },
       });
 

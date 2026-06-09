@@ -111,7 +111,9 @@ export class PublicBookingService {
             clientPhone: dto.clientPhone,
             startAt,
             notes: dto.notes,
-            status: 'confirmed',
+            // Honour the partner's setting: auto-confirm, else leave pending for
+            // staff to confirm manually in the backoffice.
+            status: partner.autoConfirmBookings ? 'confirmed' : 'pending',
           },
           { source: BookingSource.public },
         );
@@ -134,7 +136,7 @@ export class PublicBookingService {
   private async resolvePartner(slug: string) {
     const partner = await this.prisma.partner.findFirst({
       where: { slug, active: true, deletedAt: null },
-      select: { id: true },
+      select: { id: true, autoConfirmBookings: true },
     });
     if (!partner) throw AppException.notFound('Salon not found');
     return partner;

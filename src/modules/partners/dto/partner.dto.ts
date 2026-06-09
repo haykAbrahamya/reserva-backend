@@ -43,6 +43,7 @@ export const updatePartnerSchema = z.object({
   type: z.string().trim().min(1).max(80).optional(),
   accent: hexColor.optional(),
   active: z.boolean().optional(),
+  autoConfirmBookings: z.boolean().optional(),
   presentation: presentationSchema.partial().optional(),
 });
 export class UpdatePartnerDto extends createZodDto(updatePartnerSchema) {}
