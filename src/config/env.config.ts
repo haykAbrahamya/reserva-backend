@@ -45,6 +45,10 @@ const envSchema = z.object({
   /** Backoffice base URL — used to build the signup activation magic link. */
   BACKOFFICE_URL: z.string().default('https://backoffice.reserva.am'),
 
+  /** Sentry error monitoring. Empty DSN → Sentry self-disables (dev/local). */
+  SENTRY_DSN: z.string().default(''),
+  SENTRY_ENV: z.string().default('production'),
+
   THROTTLE_TTL: z.coerce.number().int().positive().default(60),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
 });

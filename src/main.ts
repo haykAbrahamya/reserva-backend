@@ -8,12 +8,16 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { initSentry } from './common/monitoring/sentry';
 import type { Env } from './config/env.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  // Error monitoring — no-op if SENTRY_DSN is unset (dev/local).
+  initSentry(config.get<string>('SENTRY_DSN'), config.get<string>('SENTRY_ENV'));
 
   // Helmet with an explicit CSP that permits the Scalar docs UI (it loads its
   // bundle + fonts from jsDelivr and uses inline styles / blob workers), while

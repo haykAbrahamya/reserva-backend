@@ -11,6 +11,7 @@ import { ZodError } from 'zod';
 import type { Request, Response } from 'express';
 import { AppException } from './app.exception';
 import { ErrorCode } from './error-codes';
+import { reportException } from '../monitoring/sentry';
 
 interface ErrorBody {
   code: ErrorCode | string;
@@ -40,6 +41,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `${req.method} ${req.url} → ${status} ${body.code}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      // Report only unexpected 5xx to Sentry (expected 4xx are normal, ignored).
+      const user = (req as Request & { user?: { id?: string; partnerId?: string } }).user;
+      reportException(exception, {
+        method: req.method,
+        url: req.url,
+        partnerId: user?.partnerId,
+        userId: user?.id,
+      });
     }
 
     res.status(status).json({ error: body });
