@@ -36,7 +36,10 @@ export class PushService implements OnModuleInit {
   onModuleInit() {
     const publicKey = this.config.get<string>('VAPID_PUBLIC_KEY');
     const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY');
-    const subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:admin@reserva.am';
+    // VAPID subject must be a URL or a mailto: URI. Auto-prefix a bare email so
+    // a plain address in .env (e.g. "me@x.com") never throws "not a valid url".
+    let subject = this.config.get<string>('VAPID_SUBJECT') || 'mailto:admin@reserva.am';
+    if (!/^(https?:|mailto:)/i.test(subject)) subject = `mailto:${subject}`;
     if (publicKey && privateKey) {
       webpush.setVapidDetails(subject, publicKey, privateKey);
       this.enabled = true;
