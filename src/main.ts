@@ -33,8 +33,26 @@ async function bootstrap() {
       },
     }),
   );
+  // CORS: allow the explicit origins list (e.g. localhost in dev) plus the apex
+  // and ANY subdomain of CORS_BASE_DOMAIN over https — so every tenant subdomain
+  // (antheris.reserva.am, …) is permitted without listing each slug.
+  const allowedOrigins = config.get<Env['CORS_ORIGINS']>('CORS_ORIGINS') ?? [];
+  const baseDomain = config.get<string>('CORS_BASE_DOMAIN') ?? '';
+  const baseDomainRe = baseDomain
+    ? new RegExp(`^https://([a-z0-9-]+\\.)*${baseDomain.replace(/\./g, '\\.')}$`, 'i')
+    : null;
+
   app.enableCors({
-    origin: config.get<Env['CORS_ORIGINS']>('CORS_ORIGINS') ?? [],
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      // Non-browser clients (curl, server-to-server) send no Origin — allow.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (baseDomainRe?.test(origin)) return callback(null, true);
+      return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
     credentials: true,
   });
 

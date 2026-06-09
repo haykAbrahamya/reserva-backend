@@ -12,6 +12,13 @@ const envSchema = z.object({
     .default('')
     .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
 
+  /**
+   * Base domain whose subdomains are allowed by CORS. With "reserva.am" this
+   * permits the apex plus any tenant subdomain (antheris.reserva.am, etc.) over
+   * https — so the multi-tenant client doesn't need every slug listed.
+   */
+  CORS_BASE_DOMAIN: z.string().default(''),
+
   DATABASE_URL: z.string().url(),
 
   JWT_ACCESS_SECRET: z.string().min(16),
