@@ -7,6 +7,8 @@ export const createServiceSchema = z.object({
   category: z.string().trim().max(60).default(''),
   price: z.number().int().min(0),
   duration: z.number().int().min(5).max(600), // minutes
+  /** Recurrence interval in TOTAL DAYS (null = no repeat). Max ~5 years. */
+  repeatEveryDays: z.number().int().min(1).max(1825).nullable().optional(),
   active: z.boolean().default(true),
 });
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}

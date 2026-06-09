@@ -53,8 +53,11 @@ enum Weekday {
 
 model Partner {
   id   String @id
-  /// Public URL handle: reserva.am/p/:slug
-  slug String @unique
+  /// Public URL handle: slug.reserva.am / reserva.am/p/:slug. Optional — a
+  /// partner can be created without one (then the public page 404s until the
+  /// owner sets a slug in Settings). Unique when present (Postgres allows
+  /// multiple NULLs under a unique index).
+  slug String? @unique
   name String
   /// Free-text category shown publicly, e.g. "Aesthetic clinic".
   type String
@@ -142,6 +145,10 @@ model Service {
   price     Int
   /// Duration in minutes.
   duration  Int
+  /// How often this service should be repeated, in TOTAL DAYS (e.g. 40 = "1
+  /// month & 10 days"). Null = no recurrence. Foundation for future "time to
+  /// rebook" reminders. Backoffice-only; never shown on the public page.
+  repeatEveryDays Int?
   active    Boolean @default(true)
 
   createdAt DateTime  @default(now())

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
 import { AppException } from '@/common/errors/app.exception';
+import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import type { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
@@ -109,6 +110,17 @@ export class PartnersService {
     await this.assertExists(partnerId);
     const { presentation, ...rest } = dto;
 
+    // Slug must be globally unique (when changing it to a new value).
+    if (rest.slug !== undefined) {
+      const taken = await this.prisma.partner.findFirst({
+        where: { slug: rest.slug, id: { not: partnerId } },
+        select: { id: true },
+      });
+      if (taken) {
+        throw AppException.conflict(ErrorCode.SLUG_TAKEN, `The handle "${rest.slug}" is already taken`);
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.partner.update({
         where: { id: partnerId },
@@ -117,6 +129,7 @@ export class PartnersService {
           ...(rest.type !== undefined && { type: rest.type }),
           ...(rest.accent !== undefined && { accent: rest.accent }),
           ...(rest.active !== undefined && { active: rest.active }),
+          ...(rest.slug !== undefined && { slug: rest.slug }),
           ...(rest.autoConfirmBookings !== undefined && {
             autoConfirmBookings: rest.autoConfirmBookings,
           }),

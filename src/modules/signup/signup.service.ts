@@ -30,11 +30,15 @@ export class SignupService {
    * sensitive — just acknowledges so we don't leak whether an email exists.
    */
   async start(dto: SignupDto): Promise<{ email: string }> {
-    const slug = (dto.slug ?? slugify(dto.companyName)).toLowerCase();
+    // Slug is OPTIONAL — no auto-derive. Empty string = "no slug yet".
+    const slug = dto.slug ? dto.slug.toLowerCase() : '';
     const email = dto.adminEmail.toLowerCase();
+    const phone = normalizePhone(dto.adminPhone);
 
-    await this.assertSlugFree(slug);
+    // Validate duplicates UP FRONT so the form shows the error (not at activation).
+    if (slug) await this.assertSlugFree(slug);
     await this.assertEmailFree(email);
+    await this.assertPhoneFree(phone);
 
     // Raw token goes in the email; only its hash is stored.
     const rawToken = randomBytes(32).toString('base64url');
@@ -56,7 +60,7 @@ export class SignupService {
         accent: dto.accent,
         adminName: dto.adminName,
         adminEmail: email,
-        adminPhone: normalizePhone(dto.adminPhone),
+        adminPhone: phone,
         passwordHash: await this.passwords.hash(dto.password),
         expiresAt,
       },
@@ -89,17 +93,19 @@ export class SignupService {
       );
     }
 
-    // Re-check uniqueness at activation (someone could have taken slug/email
-    // in the meantime). If taken, surface a clear error.
-    await this.assertSlugFree(pending.slug);
+    // Re-check uniqueness at activation (someone could have taken slug/email/
+    // phone in the meantime). If taken, surface a clear error.
+    const slug = pending.slug || null; // empty string → no slug
+    if (slug) await this.assertSlugFree(slug);
     await this.assertEmailFree(pending.adminEmail);
+    await this.assertPhoneFree(pending.adminPhone);
 
     const partnerId = newId();
     const adminUser = await this.prisma.$transaction(async (tx) => {
       await tx.partner.create({
         data: {
           id: partnerId,
-          slug: pending.slug,
+          slug, // null when the signup didn't choose one
           name: pending.companyName,
           type: pending.companyType,
           accent: pending.accent,
@@ -149,6 +155,16 @@ export class SignupService {
     });
     if (existing) {
       throw AppException.conflict(ErrorCode.EMAIL_TAKEN, `The email "${email}" is already registered`);
+    }
+  }
+
+  private async assertPhoneFree(phone: string) {
+    const existing = await this.prisma.user.findUnique({
+      where: { phone },
+      select: { id: true },
+    });
+    if (existing) {
+      throw AppException.conflict(ErrorCode.PHONE_TAKEN, `The phone "${phone}" is already registered`);
     }
   }
 

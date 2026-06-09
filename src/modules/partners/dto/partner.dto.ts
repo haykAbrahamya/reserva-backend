@@ -44,6 +44,14 @@ export const updatePartnerSchema = z.object({
   accent: hexColor.optional(),
   active: z.boolean().optional(),
   autoConfirmBookings: z.boolean().optional(),
+  /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers and hyphens')
+    .optional(),
   presentation: presentationSchema.partial().optional(),
 });
 export class UpdatePartnerDto extends createZodDto(updatePartnerSchema) {}
