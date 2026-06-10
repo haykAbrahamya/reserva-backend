@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { ZodValidationPipe } from 'nestjs-zod';
+import { resolve } from 'node:path';
 
 import { validateEnv } from './config/env.config';
 import { PrismaModule } from './prisma/prisma.module';
@@ -38,6 +40,15 @@ import { HealthController } from './health.controller';
           limit: Number(process.env.THROTTLE_LIMIT ?? 120),
         },
       ],
+    }),
+    // Serve uploaded partner images as static files under /uploads. In prod
+    // nginx serves this path directly (faster); this keeps it working in dev and
+    // as a fallback. `serveStaticOptions` sets a long cache since filenames are
+    // content-unique (uuid per upload).
+    ServeStaticModule.forRoot({
+      rootPath: resolve(process.env.UPLOADS_DIR ?? 'uploads'),
+      serveRoot: '/uploads',
+      serveStaticOptions: { index: false, maxAge: '30d', immutable: true },
     }),
     PrismaModule,
     MailModule,

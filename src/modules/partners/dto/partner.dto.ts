@@ -15,8 +15,18 @@ export const presentationSchema = z.object({
   rating: z.number().min(0).max(5).default(0),
   reviews: z.number().int().min(0).default(0),
   heroTints: z.array(z.string()).max(4).default([]),
+  // Gallery tiles. New tiles carry an uploaded image `url`; legacy seed tiles
+  // carried only a color `tone` + label. Both shapes are accepted so existing
+  // data stays valid; the client renders an <img> when `url` is present and
+  // falls back to the colored tile otherwise.
   gallery: z
-    .array(z.object({ label: z.string().max(80), tone: z.string().max(20) }))
+    .array(
+      z.object({
+        url: z.string().max(500).optional(),
+        label: z.string().max(80).optional().default(''),
+        tone: z.string().max(20).optional(),
+      }),
+    )
     .max(12)
     .default([]),
 });
@@ -60,3 +70,9 @@ export const updatePartnerSchema = z.object({
   presentation: presentationSchema.partial().optional(),
 });
 export class UpdatePartnerDto extends createZodDto(updatePartnerSchema) {}
+
+/** Reorder the gallery to this exact list of image urls (drag-to-reorder). */
+export const galleryReorderSchema = z.object({
+  urls: z.array(z.string().max(500)).max(12),
+});
+export class GalleryReorderDto extends createZodDto(galleryReorderSchema) {}

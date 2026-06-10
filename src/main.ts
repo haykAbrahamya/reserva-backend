@@ -35,6 +35,10 @@ async function bootstrap() {
           workerSrc: ["'self'", 'blob:'],
         },
       },
+      // Uploaded gallery images are served from this API origin but loaded by the
+      // client apps on other origins (*.reserva.am). The default same-origin
+      // resource policy would block those <img> loads, so relax it to cross-origin.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
   // CORS: allow the explicit origins list (e.g. localhost in dev) plus the apex

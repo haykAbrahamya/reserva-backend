@@ -1,15 +1,37 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity, ApiConsumes } from '@nestjs/swagger';
 import { PartnersService } from './partners.service';
+import { GalleryService } from './gallery.service';
 import { Public, Roles, CurrentUser } from '@/auth/decorators';
 import { InternalApiGuard } from '@/auth/guards/internal-api.guard';
 import type { AuthUser } from '@/auth/auth.types';
-import { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
+import {
+  CreatePartnerDto,
+  UpdatePartnerDto,
+  GalleryReorderDto,
+} from './dto/partner.dto';
+
+// 8 MB cap on the raw upload (sharp shrinks it to WebP afterwards).
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 @ApiTags('Partners')
 @Controller()
 export class PartnersController {
-  constructor(private readonly partners: PartnersService) {}
+  constructor(
+    private readonly partners: PartnersService,
+    private readonly gallery: GalleryService,
+  ) {}
 
   // ── Authenticated backoffice ──────────────────────────────
 
@@ -26,6 +48,42 @@ export class PartnersController {
   @ApiOperation({ summary: 'Update partner profile + branding/presentation (admin)' })
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdatePartnerDto) {
     return this.partners.update(user.partnerId, dto);
+  }
+
+  // ── Storefront gallery (admin) ────────────────────────────
+
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @Roles('admin')
+  @Post('partner/gallery')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+    }),
+  )
+  @ApiOperation({ summary: 'Upload a gallery image (admin)' })
+  uploadGalleryImage(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: { buffer: Buffer; mimetype: string },
+    @Body('label') label?: string,
+  ) {
+    return this.gallery.addImage(user.partnerId, file, label ?? '');
+  }
+
+  @ApiBearerAuth()
+  @Roles('admin')
+  @Delete('partner/gallery')
+  @ApiOperation({ summary: 'Remove a gallery image by url (admin)' })
+  removeGalleryImage(@CurrentUser() user: AuthUser, @Body('url') url: string) {
+    return this.gallery.removeImage(user.partnerId, url);
+  }
+
+  @ApiBearerAuth()
+  @Roles('admin')
+  @Patch('partner/gallery/order')
+  @ApiOperation({ summary: 'Reorder gallery images (admin)' })
+  reorderGallery(@CurrentUser() user: AuthUser, @Body() dto: GalleryReorderDto) {
+    return this.gallery.reorder(user.partnerId, dto.urls);
   }
 
   // Public partner read lives in PublicController (GET public/partners/:slug).

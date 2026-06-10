@@ -22,3 +22,6 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# uploaded partner images (dev). In prod UPLOADS_DIR points at a persistent path.
+/uploads

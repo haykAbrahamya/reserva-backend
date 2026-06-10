@@ -45,6 +45,20 @@ const envSchema = z.object({
   /** Backoffice base URL — used to build the signup activation magic link. */
   BACKOFFICE_URL: z.string().default('https://backoffice.reserva.am'),
 
+  /**
+   * Where uploaded partner images (gallery photos) are written on disk. Served
+   * back as static files under /uploads. Default is a repo-local folder for dev;
+   * in prod point it at a persistent path (e.g. /var/www/reserva/uploads) that
+   * nginx also serves directly.
+   */
+  UPLOADS_DIR: z.string().default('uploads'),
+  /**
+   * Public base URL that maps to UPLOADS_DIR (no trailing slash). Stored image
+   * URLs are built as `${UPLOADS_PUBLIC_URL}/<partnerId>/<file>`. In prod set to
+   * e.g. https://api.reserva.am/uploads. Empty → same-origin "/uploads".
+   */
+  UPLOADS_PUBLIC_URL: z.string().default(''),
+
   /** Sentry error monitoring. Empty DSN → Sentry self-disables (dev/local). */
   SENTRY_DSN: z.string().default(''),
   SENTRY_ENV: z.string().default('production'),
