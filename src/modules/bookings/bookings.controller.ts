@@ -6,6 +6,7 @@ import { CurrentUser } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import {
   ListBookingsQueryDto,
+  CalendarQueryDto,
   CreateBookingDto,
   UpdateBookingDto,
   UpdateStatusDto,
@@ -27,12 +28,8 @@ export class BookingsController {
 
   @Get('calendar')
   @ApiOperation({ summary: 'Bookings in a date window for the calendar view' })
-  calendar(
-    @CurrentUser() user: AuthUser,
-    @Query('from') from: string,
-    @Query('to') to: string,
-  ) {
-    return this.bookings.calendar(user.partnerId, new Date(from), new Date(to), user.locationId);
+  calendar(@CurrentUser() user: AuthUser, @Query() q: CalendarQueryDto) {
+    return this.bookings.calendar(user.partnerId, q.from, q.to, user.locationId);
   }
 
   @Get(':id')

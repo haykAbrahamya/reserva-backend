@@ -144,6 +144,8 @@ export class PartnersService {
             tagline: presentation.tagline ?? '',
             about: presentation.about ?? '',
             hours: presentation.hours ?? '',
+            instagram: presentation.instagram ?? '',
+            facebook: presentation.facebook ?? '',
             rating: presentation.rating ?? 0,
             reviews: presentation.reviews ?? 0,
             heroTints: (presentation.heroTints ?? []) as Prisma.InputJsonValue,
@@ -153,6 +155,8 @@ export class PartnersService {
             ...(presentation.tagline !== undefined && { tagline: presentation.tagline }),
             ...(presentation.about !== undefined && { about: presentation.about }),
             ...(presentation.hours !== undefined && { hours: presentation.hours }),
+            ...(presentation.instagram !== undefined && { instagram: presentation.instagram }),
+            ...(presentation.facebook !== undefined && { facebook: presentation.facebook }),
             ...(presentation.rating !== undefined && { rating: presentation.rating }),
             ...(presentation.reviews !== undefined && { reviews: presentation.reviews }),
             ...(presentation.heroTints !== undefined && {

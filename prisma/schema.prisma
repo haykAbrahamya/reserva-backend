@@ -94,6 +94,9 @@ model PartnerPresentation {
   tagline   String  @default("")
   about     String  @default("")
   hours     String  @default("") // human-readable summary, e.g. "Mon–Sat · 10:00–19:00"
+  /// Public social links (full URLs). Empty = not shown on the booking page.
+  instagram String  @default("")
+  facebook  String  @default("")
   rating    Decimal @default(0) @db.Decimal(2, 1)
   reviews   Int     @default(0)
   /// Hero gradient tints [from, to] + decorative gallery tiles, stored as JSON

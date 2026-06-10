@@ -16,6 +16,18 @@ export const listBookingsQuerySchema = paginationSchema.extend({
 });
 export class ListBookingsQueryDto extends createZodDto(listBookingsQuerySchema) {}
 
+/**
+ * Calendar window query. `from`/`to` are validated as real dates so a malformed
+ * value returns a clean 400 instead of crashing Prisma with an Invalid Date.
+ */
+export const calendarQuerySchema = z
+  .object({
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+  })
+  .refine((q) => q.from <= q.to, { message: '`from` must be on or before `to`', path: ['from'] });
+export class CalendarQueryDto extends createZodDto(calendarQuerySchema) {}
+
 export const createBookingSchema = z.object({
   locationId: z.string().uuid(),
   specialistId: z.string().uuid(),
