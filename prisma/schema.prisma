@@ -250,15 +250,42 @@ model Client {
   email     String?
   notes     String?
 
+  /// Telegram chat id, set once the customer connects via @ReservaBookingBot
+  /// (deep-link /start flow). When present, booking notifications are delivered
+  /// to them for free over Telegram. Null = not connected.
+  telegramChatId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  partner  Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  bookings Booking[]
+  partner       Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  bookings      Booking[]
+  telegramLinks TelegramLink[]
 
   @@unique([partnerId, phone])
   @@index([partnerId, name])
   @@map("clients")
+}
+
+/// Short-lived, single-use token that binds a Telegram chat to a Client. Created
+/// when we show the "Get notified" button after a booking; consumed when the
+/// customer presses Start on the bot (the token rides in the /start payload).
+model TelegramLink {
+  /// The opaque token embedded in the t.me/<bot>?start=<token> deep link.
+  token     String   @id
+  clientId  String
+  /// The booking this link was generated from (for the welcome message context).
+  bookingId String?
+  expiresAt DateTime
+  /// Set when the customer completes the /start bind — makes the token single-use.
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([expiresAt])
+  @@map("telegram_links")
 }
 
 // ── Booking ─────────────────────────────────────────────────

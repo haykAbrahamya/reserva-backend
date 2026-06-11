@@ -3,6 +3,7 @@ import { Prisma, NotificationType } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { newId } from '@/common/ids';
 import { PushService } from './push.service';
+import { TelegramService } from './telegram.service';
 
 export type BookingEvent =
   | 'created'
@@ -17,11 +18,21 @@ interface NotifiableBooking {
   id: string;
   partnerId: string;
   locationId: string;
+  clientId?: string | null;
   clientName: string;
   startAt: Date | string;
   service?: { name: string } | null;
   specialist?: { name: string } | null;
 }
+
+/** Customer-facing message per event (the salon name is prepended). Events the
+ *  customer shouldn't be bothered with (e.g. internal "no-show") are omitted. */
+const CUSTOMER_MESSAGES: Partial<Record<BookingEvent, (when: string, svc: string, sp: string) => string>> = {
+  created: (when, svc) => `📅 <b>Booking received</b>\n${svc} · ${when}\nWe'll confirm shortly.`,
+  confirmed: (when, svc, sp) => `✅ <b>Booking confirmed</b>\n${svc}${sp} · ${when}\nSee you soon! 💆`,
+  rescheduled: (when, svc, sp) => `🔁 <b>Booking rescheduled</b>\n${svc}${sp}\nNew time: ${when}`,
+  cancelled: (when, svc) => `❌ <b>Booking cancelled</b>\n${svc} · ${when}\nHope to see you another time.`,
+};
 
 const EVENT_TO_TYPE: Record<BookingEvent, NotificationType> = {
   created: 'booking_created',
@@ -55,6 +66,7 @@ export class BookingNotifier {
   constructor(
     private readonly prisma: PrismaService,
     private readonly push: PushService,
+    private readonly telegram: TelegramService,
   ) {}
 
   /** Fire-and-forget entrypoint — safe to call without awaiting.
@@ -63,6 +75,37 @@ export class BookingNotifier {
     this.run(event, booking, actorId).catch((e) =>
       this.logger.warn(`Booking notification failed: ${(e as Error).message}`),
     );
+    // Customer Telegram notification runs independently (separate failure domain).
+    this.notifyCustomer(event, booking).catch((e) =>
+      this.logger.warn(`Customer telegram notification failed: ${(e as Error).message}`),
+    );
+  }
+
+  /** Notify the booking's CUSTOMER over Telegram, if they've connected the bot. */
+  private async notifyCustomer(event: BookingEvent, b: NotifiableBooking): Promise<void> {
+    if (!this.telegram.enabled || !b.clientId) return;
+    const template = CUSTOMER_MESSAGES[event];
+    if (!template) return; // event not surfaced to customers
+
+    const client = await this.prisma.client.findUnique({
+      where: { id: b.clientId },
+      select: { telegramChatId: true, partner: { select: { name: true } } },
+    });
+    if (!client?.telegramChatId) return; // not connected — nothing to do
+
+    const when = formatWhen(b.startAt);
+    const svc = b.service?.name ?? 'appointment';
+    const sp = b.specialist?.name ? ` with ${b.specialist.name}` : '';
+    const salon = client.partner?.name ? `<b>${escapeHtml(client.partner.name)}</b>\n` : '';
+    const html = salon + template(when, escapeHtml(svc), escapeHtml(sp));
+
+    const res = await this.telegram.sendMessage(client.telegramChatId, html);
+    // If the customer blocked the bot / chat is gone, forget the stale id.
+    if (res.unreachable) {
+      await this.prisma.client
+        .update({ where: { id: b.clientId }, data: { telegramChatId: null } })
+        .catch(() => {});
+    }
   }
 
   private async run(event: BookingEvent, b: NotifiableBooking, actorId?: string): Promise<void> {
@@ -78,12 +121,7 @@ export class BookingNotifier {
     });
     if (recipients.length === 0) return;
 
-    const when = new Date(b.startAt).toLocaleString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
     const withSp = b.specialist?.name ? ` with ${b.specialist.name}` : '';
     const title = EVENT_TITLES[event];
@@ -118,4 +156,17 @@ export class BookingNotifier {
       tag: `booking-${b.id}`,
     });
   }
+}
+
+function formatWhen(startAt: Date | string): string {
+  return new Date(startAt).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

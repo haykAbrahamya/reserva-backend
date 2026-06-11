@@ -29,6 +29,13 @@ const envSchema = z.object({
   /** Shared secret for internal-backoffice → partner provisioning endpoints. */
   INTERNAL_API_KEY: z.string().min(16),
 
+  /** Telegram bot for free customer booking notifications. If TOKEN is unset,
+   *  Telegram notifications self-disable (no-op). USERNAME (without @) builds the
+   *  t.me deep link; SECRET guards the webhook endpoint. */
+  TELEGRAM_BOT_TOKEN: z.string().default(''),
+  TELEGRAM_BOT_USERNAME: z.string().default('ReservaBookingBot'),
+  TELEGRAM_WEBHOOK_SECRET: z.string().default(''),
+
   /** Web Push (VAPID). Optional — if unset, push notifications self-disable. */
   VAPID_PUBLIC_KEY: z.string().default(''),
   VAPID_PRIVATE_KEY: z.string().default(''),
