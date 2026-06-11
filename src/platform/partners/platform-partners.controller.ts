@@ -5,7 +5,11 @@ import { Public } from '@/auth/decorators';
 import { PlatformAuthGuard } from '../guards/platform-auth.guard';
 import { PlatformRolesGuard } from '../guards/platform-roles.guard';
 import { CreatePartnerDto, UpdatePartnerDto } from '@/modules/partners/dto/partner.dto';
-import { ListPlatformPartnersQueryDto, SetPartnerActiveDto } from './dto/platform-partner.dto';
+import {
+  ListPlatformPartnersQueryDto,
+  SetPartnerActiveDto,
+  SetPartnerMarketplaceDto,
+} from './dto/platform-partner.dto';
 
 @ApiTags('Platform · Partners')
 @ApiBearerAuth()
@@ -43,5 +47,11 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Enable or disable a partner' })
   setActive(@Param('id') id: string, @Body() dto: SetPartnerActiveDto) {
     return this.partners.setActive(id, dto.active);
+  }
+
+  @Patch(':id/marketplace')
+  @ApiOperation({ summary: 'Feature/unfeature a salon in the public marketplace' })
+  setMarketplace(@Param('id') id: string, @Body() dto: SetPartnerMarketplaceDto) {
+    return this.partners.setMarketplace(id, dto.listed);
   }
 }

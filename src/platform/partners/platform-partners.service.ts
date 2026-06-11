@@ -186,6 +186,13 @@ export class PlatformPartnersService {
     return this.get(id);
   }
 
+  /** Feature/unfeature a salon in the public marketplace (/salons). Platform-only. */
+  async setMarketplace(id: string, listed: boolean) {
+    await this.assertExists(id);
+    await this.prisma.partner.update({ where: { id }, data: { marketplaceListed: listed } });
+    return this.get(id);
+  }
+
   // ── guards ────────────────────────────────────────────────
 
   private async assertExists(id: string) {

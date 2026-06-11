@@ -11,3 +11,6 @@ export class ListPlatformPartnersQueryDto extends createZodDto(listPlatformPartn
 
 export const setPartnerActiveSchema = z.object({ active: z.boolean() });
 export class SetPartnerActiveDto extends createZodDto(setPartnerActiveSchema) {}
+
+export const setPartnerMarketplaceSchema = z.object({ listed: z.boolean() });
+export class SetPartnerMarketplaceDto extends createZodDto(setPartnerMarketplaceSchema) {}
