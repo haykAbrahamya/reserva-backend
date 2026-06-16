@@ -14,8 +14,11 @@ export interface SalonCard {
   rating: number;
   reviews: number;
   heroTints: string[];
-  /** Distinct location addresses (first few) for the card + location search. */
-  locations: { id: string; name: string; address: string }[];
+  /** Locations (first few) for the card + location search + "open now" status.
+   *  `hours` is the weekly schedule JSON ({ mon: { enabled, start, end }, … }),
+   *  passed through so the client computes open/closed in the visitor's local
+   *  time (avoids server-timezone assumptions). */
+  locations: { id: string; name: string; address: string; hours: unknown }[];
   /** Service categories offered (deduped) — chips on the card + service search. */
   categories: string[];
   serviceCount: number;
@@ -85,7 +88,7 @@ export class SalonsService {
       take: 60,
       include: {
         presentation: true,
-        locations: { where: { deletedAt: null }, orderBy: { name: 'asc' }, select: { id: true, name: true, address: true } },
+        locations: { where: { deletedAt: null }, orderBy: { name: 'asc' }, select: { id: true, name: true, address: true, hours: true } },
         services: { where: { deletedAt: null, active: true }, select: { category: true, name: true } },
         _count: {
           select: {

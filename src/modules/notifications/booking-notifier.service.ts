@@ -28,10 +28,30 @@ interface NotifiableBooking {
 /** Customer-facing message per event (the salon name is prepended). Events the
  *  customer shouldn't be bothered with (e.g. internal "no-show") are omitted. */
 const CUSTOMER_MESSAGES: Partial<Record<BookingEvent, (when: string, svc: string, sp: string) => string>> = {
-  created: (when, svc) => `📅 <b>Booking received</b>\n${svc} · ${when}\nWe'll confirm shortly.`,
-  confirmed: (when, svc, sp) => `✅ <b>Booking confirmed</b>\n${svc}${sp} · ${when}\nSee you soon! 💆`,
-  rescheduled: (when, svc, sp) => `🔁 <b>Booking rescheduled</b>\n${svc}${sp}\nNew time: ${when}`,
-  cancelled: (when, svc) => `❌ <b>Booking cancelled</b>\n${svc} · ${when}\nHope to see you another time.`,
+  created: (when, svc, sp) =>
+    `📋 <b>Booking received!</b>\n\n` +
+    `We've got your request — give us a moment to confirm it. ✨\n\n` +
+    `💇 <b>${svc}</b>${sp}\n` +
+    `🗓 ${when}\n\n` +
+    `<i>We'll ping you the second it's confirmed.</i>`,
+  confirmed: (when, svc, sp) =>
+    `✅ <b>You're all set!</b>\n\n` +
+    `Your appointment is confirmed. We can't wait to see you! 💆\n\n` +
+    `💇 <b>${svc}</b>${sp}\n` +
+    `🗓 ${when}\n\n` +
+    `<i>See you soon — and feel free to arrive a few minutes early. 🌿</i>`,
+  rescheduled: (when, svc, sp) =>
+    `🔁 <b>Your appointment was moved</b>\n\n` +
+    `No worries — here's your new time:\n\n` +
+    `💇 <b>${svc}</b>${sp}\n` +
+    `🗓 <b>${when}</b>\n\n` +
+    `<i>See you then! 💛</i>`,
+  cancelled: (when, svc) =>
+    `❌ <b>Booking cancelled</b>\n\n` +
+    `Your appointment below has been cancelled:\n\n` +
+    `💇 ${svc}\n` +
+    `🗓 ${when}\n\n` +
+    `<i>We'd love to see you another time — book again whenever you're ready. 🌸</i>`,
 };
 
 const EVENT_TO_TYPE: Record<BookingEvent, NotificationType> = {
@@ -95,9 +115,13 @@ export class BookingNotifier {
 
     const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
-    const sp = b.specialist?.name ? ` with ${b.specialist.name}` : '';
-    const salon = client.partner?.name ? `<b>${escapeHtml(client.partner.name)}</b>\n` : '';
-    const html = salon + template(when, escapeHtml(svc), escapeHtml(sp));
+    const sp = b.specialist?.name ? ` with ${escapeHtml(b.specialist.name)}` : '';
+    const body = template(when, escapeHtml(svc), sp);
+    // Salon name as a subtle header above the message body.
+    const salon = client.partner?.name
+      ? `🏛 <b>${escapeHtml(client.partner.name)}</b>\n\n`
+      : '';
+    const html = salon + body;
 
     const res = await this.telegram.sendMessage(client.telegramChatId, html);
     // If the customer blocked the bot / chat is gone, forget the stale id.

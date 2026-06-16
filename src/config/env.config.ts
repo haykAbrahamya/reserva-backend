@@ -35,6 +35,9 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_BOT_USERNAME: z.string().default('ReservaBookingBot'),
   TELEGRAM_WEBHOOK_SECRET: z.string().default(''),
+  /** Optional public image URL shown as a banner in the bot's welcome message.
+   *  Empty → welcome is sent as text only. */
+  TELEGRAM_WELCOME_IMAGE: z.string().default(''),
 
   /** Web Push (VAPID). Optional — if unset, push notifications self-disable. */
   VAPID_PUBLIC_KEY: z.string().default(''),

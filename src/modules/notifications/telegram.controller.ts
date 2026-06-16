@@ -58,10 +58,21 @@ export class TelegramController {
     const id = String(chatId);
 
     if (!token) {
-      await this.telegram.sendMessage(
-        id,
-        '👋 Welcome to <b>Reserva</b>! Book a salon and tap “Get notified on Telegram” to receive your booking updates here.',
-      );
+      const welcome =
+        `👋 <b>Welcome to Reserva!</b>\n\n` +
+        `Reserva is the easiest way to discover salons and book beauty &amp; wellness appointments in Armenia. 💆‍♀️✨\n\n` +
+        `To get your booking updates right here in Telegram:\n` +
+        `1️⃣ Book at any Reserva salon\n` +
+        `2️⃣ Tap <b>“Get notified on Telegram”</b> on the confirmation\n` +
+        `3️⃣ You're set — confirmations, reminders &amp; changes land here automatically. 🔔`;
+      const buttons = [{ text: '🔎 Browse salons', url: 'https://reserva.am/salons' }];
+      const image = this.config.get('TELEGRAM_WELCOME_IMAGE', { infer: true });
+      // Richer welcome with a banner image when configured; text otherwise.
+      if (image) {
+        await this.telegram.sendPhoto(id, image, welcome, { buttons });
+      } else {
+        await this.telegram.sendMessage(id, welcome, { buttons });
+      }
       return { ok: true };
     }
 
@@ -70,12 +81,19 @@ export class TelegramController {
       const where = result.salonName ? ` for <b>${escapeHtml(result.salonName)}</b>` : '';
       await this.telegram.sendMessage(
         id,
-        `✅ <b>You're connected!</b>\nYou'll get booking updates${where} right here — confirmations, reminders and changes. 💆`,
+        `🎉 <b>You're connected!</b>\n\n` +
+          `Great — you'll now get updates${where} right here:\n\n` +
+          `✅ Booking confirmations\n` +
+          `⏰ Friendly reminders before your appointment\n` +
+          `🔁 Any reschedules or changes\n\n` +
+          `<i>That's it — no app to install, nothing to set up. Enjoy! 🌿</i>`,
       );
     } else {
       await this.telegram.sendMessage(
         id,
-        '⚠️ This connection link is invalid or has expired. Make a booking and tap “Get notified on Telegram” again to reconnect.',
+        `😕 <b>Hmm, that link didn't work.</b>\n\n` +
+          `It may have expired or already been used. No problem — just make a booking and tap ` +
+          `<b>“Get notified on Telegram”</b> again to reconnect. 💛`,
       );
     }
     return { ok: true };

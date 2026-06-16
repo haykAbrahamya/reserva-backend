@@ -75,6 +75,44 @@ export class TelegramService {
     }
   }
 
+  /**
+   * Send a photo (by public URL) with an optional HTML caption + buttons. Used
+   * for a richer welcome. Falls back silently when disabled.
+   */
+  async sendPhoto(
+    chatId: string,
+    photoUrl: string,
+    caption: string,
+    opts: { buttons?: { text: string; url: string }[] } = {},
+  ): Promise<{ ok: boolean; unreachable?: boolean }> {
+    if (!this.enabled) return { ok: false };
+    try {
+      const reply_markup = opts.buttons?.length
+        ? { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, url: b.url }))] }
+        : undefined;
+      const res = await fetch(this.api('sendPhoto'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption,
+          parse_mode: 'HTML',
+          reply_markup,
+        }),
+      });
+      if (res.ok) return { ok: true };
+      const body = (await res.json().catch(() => null)) as { description?: string } | null;
+      const desc = body?.description ?? '';
+      const unreachable = res.status === 403 || /chat not found|blocked/i.test(desc);
+      this.logger.warn(`Telegram sendPhoto failed (${res.status}): ${desc}`);
+      return { ok: false, unreachable };
+    } catch (e) {
+      this.logger.warn(`Telegram sendPhoto error: ${(e as Error).message}`);
+      return { ok: false };
+    }
+  }
+
   /** Register the webhook URL with Telegram (run once after deploy). */
   async setWebhook(url: string, secretToken?: string): Promise<boolean> {
     if (!this.enabled) return false;
