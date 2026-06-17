@@ -8,6 +8,9 @@ export const createLocationSchema = z.object({
   address: z.string().trim().min(1).max(240),
   phone: z.string().trim().max(40).default(''),
   hours: weekScheduleSchema.optional(),
+  /** Geo coordinates from the map picker. Nullable to allow clearing the pin. */
+  lat: z.number().min(-90).max(90).nullable().optional(),
+  lng: z.number().min(-180).max(180).nullable().optional(),
 });
 export class CreateLocationDto extends createZodDto(createLocationSchema) {}
 

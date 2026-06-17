@@ -55,6 +55,8 @@ export class LocationsService {
         address: dto.address,
         phone: dto.phone ?? '',
         hours: (dto.hours ?? {}) as Prisma.InputJsonValue,
+        lat: dto.lat ?? null,
+        lng: dto.lng ?? null,
       },
     });
   }
@@ -68,6 +70,8 @@ export class LocationsService {
         ...(dto.address !== undefined && { address: dto.address }),
         ...(dto.phone !== undefined && { phone: dto.phone }),
         ...(dto.hours !== undefined && { hours: dto.hours as Prisma.InputJsonValue }),
+        ...(dto.lat !== undefined && { lat: dto.lat }),
+        ...(dto.lng !== undefined && { lng: dto.lng }),
       },
     });
   }

@@ -127,6 +127,11 @@ model Location {
   address   String
   phone     String @default("")
 
+  /// Geo coordinates from the map picker (null until set). Powers map display,
+  /// directions, and future "near me" / distance sort on the marketplace.
+  lat       Float?
+  lng       Float?
+
   /// Weekly opening hours: { mon: { enabled, start, end }, ... }. JSON because
   /// it's always read/written as a whole and never queried by inner fields.
   hours Json @default("{}")
