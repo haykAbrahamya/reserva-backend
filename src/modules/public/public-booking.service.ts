@@ -4,7 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { BookingsService } from '@/modules/bookings/bookings.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
-import { computeSlots } from '@/common/utils/availability';
+import { computeSlots, computeCapacitySlots } from '@/common/utils/availability';
 import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
 import type { SlotsQueryDto, PublicCreateBookingDto } from './dto/public-booking.dto';
 
@@ -24,6 +24,16 @@ export class PublicBookingService {
     });
     if (!service) throw AppException.notFound('Service not found');
 
+    const day = new Date(`${q.date}T00:00:00`);
+    const dayEnd = new Date(day);
+    dayEnd.setHours(23, 59, 59, 999);
+    const notBefore = isToday(day) ? new Date() : undefined;
+
+    // ── Facility / entry service (spa): location hours + capacity, no specialist.
+    if (!service.requiresSpecialist) {
+      return this.facilitySlots(partner.id, service, q.locationId, day, dayEnd, notBefore);
+    }
+
     const candidates = await this.eligibleSpecialists(
       partner.id,
       q.serviceId,
@@ -31,11 +41,6 @@ export class PublicBookingService {
       q.locationId,
     );
     if (candidates.length === 0) return [];
-
-    const day = new Date(`${q.date}T00:00:00`);
-    const dayEnd = new Date(day);
-    dayEnd.setHours(23, 59, 59, 999);
-    const notBefore = isToday(day) ? new Date() : undefined;
 
     // Per specialist: open window − their time-off − their bookings. Union the
     // resulting slot sets so "any specialist" shows every offerable time.
@@ -80,6 +85,51 @@ export class PublicBookingService {
   /** Create a booking from the public page (auto-assigns a specialist if none). */
   async createBooking(slug: string, dto: PublicCreateBookingDto) {
     const partner = await this.resolvePartner(slug);
+
+    const service = await this.prisma.service.findFirst({
+      where: { id: dto.serviceId, partnerId: partner.id, deletedAt: null, active: true },
+      select: { id: true, duration: true, requiresSpecialist: true, capacity: true },
+    });
+    if (!service) throw AppException.notFound('Service not found');
+
+    // ── Facility / entry service: no specialist, capacity-gated. ──
+    if (!service.requiresSpecialist) {
+      const location = await this.resolveFacilityLocation(partner.id, dto.locationId);
+      if (!location) {
+        throw AppException.badRequest(ErrorCode.SERVICE_NOT_OFFERED, 'This service is not available');
+      }
+      const startAt = new Date(`${dto.date}T${dto.time}:00`);
+      const endAt = new Date(startAt.getTime() + service.duration * 60_000);
+
+      const overlapping = await this.prisma.booking.findMany({
+        where: {
+          locationId: location.id,
+          serviceId: service.id,
+          status: { in: ['pending', 'confirmed', 'completed'] },
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+        select: { id: true },
+      });
+      if (overlapping.length >= service.capacity) {
+        throw AppException.conflict(ErrorCode.BOOKING_OVERLAP, 'That time is fully booked');
+      }
+
+      return this.bookings.create(
+        partner.id,
+        {
+          locationId: location.id,
+          specialistId: null,
+          serviceId: service.id,
+          clientName: dto.clientName,
+          clientPhone: dto.clientPhone,
+          startAt,
+          notes: dto.notes,
+          status: partner.autoConfirmBookings ? 'confirmed' : 'pending',
+        },
+        { source: BookingSource.public },
+      );
+    }
 
     const candidates = await this.eligibleSpecialists(
       partner.id,
@@ -140,6 +190,49 @@ export class PublicBookingService {
     });
     if (!partner) throw AppException.notFound('Salon not found');
     return partner;
+  }
+
+  /** A bookable location for a facility service: the chosen one, else the
+   *  partner's first branch. Facility services aren't tied to a specialist. */
+  private async resolveFacilityLocation(partnerId: string, locationId?: string) {
+    return this.prisma.location.findFirst({
+      where: { partnerId, deletedAt: null, ...(locationId ? { id: locationId } : {}) },
+      orderBy: { name: 'asc' },
+      select: { id: true, hours: true },
+    });
+  }
+
+  /** Slots for a facility/entry service: location hours + concurrent capacity. */
+  private async facilitySlots(
+    partnerId: string,
+    service: { id: string; duration: number; capacity: number },
+    locationId: string | undefined,
+    day: Date,
+    dayEnd: Date,
+    notBefore: Date | undefined,
+  ): Promise<string[]> {
+    const location = await this.resolveFacilityLocation(partnerId, locationId);
+    if (!location) return [];
+
+    const busy = await this.prisma.booking.findMany({
+      where: {
+        locationId: location.id,
+        serviceId: service.id,
+        status: { in: ['pending', 'confirmed', 'completed'] },
+        startAt: { lt: dayEnd },
+        endAt: { gt: day },
+      },
+      select: { startAt: true, endAt: true },
+    });
+
+    return computeCapacitySlots({
+      day,
+      durationMin: service.duration,
+      locationHours: (location.hours ?? null) as WeekScheduleInput | null,
+      busy,
+      capacity: service.capacity,
+      notBefore,
+    });
   }
 
   /** Active specialists at the partner who offer the service (filtered by the

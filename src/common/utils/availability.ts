@@ -112,3 +112,54 @@ export function minutesToTime(min: number): string {
   const m = min % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
+
+export interface CapacitySlotParams {
+  day: Date;
+  durationMin: number;
+  stepMin?: number;
+  /** The venue's opening hours — the outer bound (no specialist involved). */
+  locationHours?: WeekScheduleInput | null;
+  /** Existing bookings for THIS facility service at the location. */
+  busy?: BusyWindow[];
+  /** Max concurrent bookings allowed per overlapping window. */
+  capacity: number;
+  notBefore?: Date;
+}
+
+/**
+ * Slots for a facility/entry service (spa sauna, pool, day pass): availability
+ * comes from location hours, and a slot is open while the number of OVERLAPPING
+ * existing bookings is below `capacity`. No specialist involved.
+ */
+export function computeCapacitySlots(p: CapacitySlotParams): string[] {
+  const step = p.stepMin ?? 15;
+  const loc = openWindowForDate(p.locationHours, p.day);
+  if (!loc || loc.startMin >= loc.endMin) return [];
+
+  const dayStart = new Date(p.day);
+  dayStart.setHours(0, 0, 0, 0);
+  const busy = p.busy ?? [];
+
+  const out: string[] = [];
+  for (let m = loc.startMin; m + p.durationMin <= loc.endMin; m += step) {
+    const slotStart = new Date(dayStart.getTime() + m * 60_000);
+    const slotEnd = new Date(slotStart.getTime() + p.durationMin * 60_000);
+    if (p.notBefore && slotStart < p.notBefore) continue;
+
+    const sMs = slotStart.getTime();
+    const eMs = slotEnd.getTime();
+    const concurrent = busy.filter((b) =>
+      intervalsOverlap(sMs, eMs, b.startAt.getTime(), b.endAt.getTime()),
+    ).length;
+
+    if (concurrent < p.capacity) out.push(minutesToTime(m));
+  }
+  return out;
+}
+
+/** How many bookings overlap a given [start,end) window (for capacity checks). */
+export function countOverlapping(start: Date, end: Date, busy: BusyWindow[]): number {
+  const s = start.getTime();
+  const e = end.getTime();
+  return busy.filter((b) => intervalsOverlap(s, e, b.startAt.getTime(), b.endAt.getTime())).length;
+}

@@ -164,6 +164,15 @@ model Service {
   /// month & 10 days"). Null = no recurrence. Foundation for future "time to
   /// rebook" reminders. Backoffice-only; never shown on the public page.
   repeatEveryDays Int?
+
+  /// When false, this is a "facility"/entry service (spa sauna, pool, day pass)
+  /// that isn't tied to a person — availability comes from location hours and
+  /// `capacity` concurrent guests, and booking skips specialist selection.
+  requiresSpecialist Boolean @default(true)
+  /// Max concurrent bookings per time slot for a no-specialist service. Ignored
+  /// when requiresSpecialist = true.
+  capacity Int @default(1)
+
   active    Boolean @default(true)
 
   createdAt DateTime  @default(now())
@@ -299,7 +308,8 @@ model Booking {
   id           String        @id
   partnerId    String
   locationId   String
-  specialistId String
+  /// Null for facility/entry services that aren't tied to a person (spa).
+  specialistId String?
   serviceId    String
   clientId     String
 
@@ -322,7 +332,7 @@ model Booking {
 
   partner    Partner    @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   location   Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+  specialist Specialist? @relation(fields: [specialistId], references: [id], onDelete: Restrict)
   service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
 

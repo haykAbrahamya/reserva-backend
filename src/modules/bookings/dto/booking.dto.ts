@@ -30,7 +30,8 @@ export class CalendarQueryDto extends createZodDto(calendarQuerySchema) {}
 
 export const createBookingSchema = z.object({
   locationId: z.string().uuid(),
-  specialistId: z.string().uuid(),
+  /** Null/omitted for facility/entry services (spa) that aren't tied to a person. */
+  specialistId: z.string().uuid().nullable().optional(),
   serviceId: z.string().uuid(),
   clientName: z.string().trim().min(1).max(120),
   clientPhone: z.string().trim().min(4).max(40),

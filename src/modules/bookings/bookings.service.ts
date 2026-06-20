@@ -118,11 +118,17 @@ export class BookingsService {
     const endAt = new Date(startAt.getTime() + service.duration * 60_000);
     this.assertFuture(startAt);
 
-    const timeOff = await this.timeOffWindows(dto.specialistId, startAt, endAt);
-    assertBookingAllowed(
-      { specialist, location, serviceId: dto.serviceId, startAt, endAt },
-      timeOff,
-    );
+    if (specialist) {
+      // Specialist booking: enforce the specialist's offer/schedule/time-off.
+      const timeOff = await this.timeOffWindows(specialist.id, startAt, endAt);
+      assertBookingAllowed(
+        { specialist, location, serviceId: dto.serviceId, startAt, endAt },
+        timeOff,
+      );
+    } else {
+      // Facility/entry service (spa): no specialist → enforce concurrent capacity.
+      await this.assertCapacity(service.id, dto.locationId, startAt, endAt, service.capacity);
+    }
 
     const booking = await this.runWithOverlapGuard<BookingWithRefs>(() =>
       this.prisma.$transaction(async (tx) => {
@@ -132,7 +138,7 @@ export class BookingsService {
             id: newId(),
             partnerId,
             locationId: dto.locationId,
-            specialistId: dto.specialistId,
+            specialistId: dto.specialistId ?? null,
             serviceId: dto.serviceId,
             clientId: client.id,
             clientName: dto.clientName,
@@ -182,8 +188,13 @@ export class BookingsService {
       dto.startAt !== undefined || dto.specialistId !== undefined || dto.serviceId !== undefined;
     if (reschedule) {
       this.assertFuture(startAt);
-      const timeOff = await this.timeOffWindows(specialistId, startAt, endAt);
-      assertBookingAllowed({ specialist, location, serviceId, startAt, endAt }, timeOff);
+      if (specialist) {
+        const timeOff = await this.timeOffWindows(specialist.id, startAt, endAt);
+        assertBookingAllowed({ specialist, location, serviceId, startAt, endAt }, timeOff);
+      } else {
+        // Facility/entry service: capacity check (exclude this booking itself).
+        await this.assertCapacity(serviceId, existing.locationId, startAt, endAt, service.capacity, id);
+      }
     }
 
     const booking = await this.runWithOverlapGuard<BookingWithRefs>(() =>
@@ -242,19 +253,22 @@ export class BookingsService {
   /** Load + tenant-check the specialist (with services), service and location. */
   private async loadRefs(
     partnerId: string,
-    specialistId: string,
+    specialistId: string | null | undefined,
     serviceId: string,
     locationId: string,
   ) {
     const [specialist, service, location] = await Promise.all([
-      this.prisma.specialist.findFirst({
-        where: { id: specialistId, partnerId, deletedAt: null },
-        include: { services: { select: { serviceId: true } } },
-      }),
+      // Facility/entry services have no specialist → skip the lookup.
+      specialistId
+        ? this.prisma.specialist.findFirst({
+            where: { id: specialistId, partnerId, deletedAt: null },
+            include: { services: { select: { serviceId: true } } },
+          })
+        : Promise.resolve(null),
       this.prisma.service.findFirst({ where: { id: serviceId, partnerId, deletedAt: null } }),
       this.prisma.location.findFirst({ where: { id: locationId, partnerId, deletedAt: null } }),
     ]);
-    if (!specialist) throw AppException.notFound('Specialist not found');
+    if (specialistId && !specialist) throw AppException.notFound('Specialist not found');
     if (!service) throw AppException.notFound('Service not found');
     if (!location) throw AppException.notFound('Location not found');
     return { specialist, service, location };
@@ -265,6 +279,31 @@ export class BookingsService {
       where: { specialistId, startAt: { lt: endAt }, endAt: { gt: startAt } },
       select: { startAt: true, endAt: true },
     });
+  }
+
+  /** Facility services: reject when the slot is already at capacity (concurrent
+   *  bookings for this service + location overlapping the window). */
+  private async assertCapacity(
+    serviceId: string,
+    locationId: string,
+    startAt: Date,
+    endAt: Date,
+    capacity: number,
+    excludeBookingId?: string,
+  ) {
+    const concurrent = await this.prisma.booking.count({
+      where: {
+        serviceId,
+        locationId,
+        status: { in: ['pending', 'confirmed', 'completed'] },
+        startAt: { lt: endAt },
+        endAt: { gt: startAt },
+        ...(excludeBookingId ? { id: { not: excludeBookingId } } : {}),
+      },
+    });
+    if (concurrent >= capacity) {
+      throw AppException.conflict(ErrorCode.BOOKING_OVERLAP, 'That time is fully booked');
+    }
   }
 
   private assertFuture(startAt: Date) {

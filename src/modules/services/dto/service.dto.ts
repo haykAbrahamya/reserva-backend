@@ -9,6 +9,10 @@ export const createServiceSchema = z.object({
   duration: z.number().int().min(5).max(600), // minutes
   /** Recurrence interval in TOTAL DAYS (null = no repeat). Max ~5 years. */
   repeatEveryDays: z.number().int().min(1).max(1825).nullable().optional(),
+  /** When false, a facility/entry service (no specialist; uses location hours + capacity). */
+  requiresSpecialist: z.boolean().default(true),
+  /** Concurrent capacity per slot for no-specialist services (1–200). */
+  capacity: z.number().int().min(1).max(200).default(1),
   active: z.boolean().default(true),
 });
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}
