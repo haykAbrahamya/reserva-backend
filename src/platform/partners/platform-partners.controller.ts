@@ -9,6 +9,8 @@ import {
   ListPlatformPartnersQueryDto,
   SetPartnerActiveDto,
   SetPartnerMarketplaceDto,
+  PlatformUpdateUserDto,
+  PlatformResetPasswordDto,
 } from './dto/platform-partner.dto';
 
 @ApiTags('Platform · Partners')
@@ -53,5 +55,31 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Feature/unfeature a salon in the public marketplace' })
   setMarketplace(@Param('id') id: string, @Body() dto: SetPartnerMarketplaceDto) {
     return this.partners.setMarketplace(id, dto.listed);
+  }
+
+  @Get(':id/users')
+  @ApiOperation({ summary: "List a partner's users (admins + managers)" })
+  listUsers(@Param('id') id: string) {
+    return this.partners.listUsers(id);
+  }
+
+  @Patch(':id/users/:userId')
+  @ApiOperation({ summary: "Update a partner user's profile" })
+  updateUser(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() dto: PlatformUpdateUserDto,
+  ) {
+    return this.partners.updateUser(id, userId, dto);
+  }
+
+  @Post(':id/users/:userId/reset-password')
+  @ApiOperation({ summary: "Reset a partner user's password (returns it once)" })
+  resetUserPassword(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() dto: PlatformResetPasswordDto,
+  ) {
+    return this.partners.resetUserPassword(id, userId, dto);
   }
 }

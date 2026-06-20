@@ -8,7 +8,11 @@ import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import { paginate, pageArgs } from '@/common/dto/pagination';
 import type { CreatePartnerDto, UpdatePartnerDto } from '@/modules/partners/dto/partner.dto';
-import type { ListPlatformPartnersQueryDto } from './dto/platform-partner.dto';
+import type {
+  ListPlatformPartnersQueryDto,
+  PlatformUpdateUserDto,
+  PlatformResetPasswordDto,
+} from './dto/platform-partner.dto';
 
 /**
  * Platform-scoped partner administration for the internal-backoffice. Unlike the
@@ -193,6 +197,69 @@ export class PlatformPartnersService {
     return this.get(id);
   }
 
+  // ── Partner's users (platform support) ────────────────────
+
+  /** All active (non-deleted) users of a partner — admins + managers. */
+  async listUsers(partnerId: string) {
+    await this.assertExists(partnerId);
+    const users = await this.prisma.user.findMany({
+      where: { partnerId, deletedAt: null },
+      include: { location: { select: { id: true, name: true } } },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+    });
+    return users.map(serializeUser);
+  }
+
+  /** Update a partner user's profile (name/phone/active). Platform support edit. */
+  async updateUser(partnerId: string, userId: string, dto: PlatformUpdateUserDto) {
+    const user = await this.getUser(partnerId, userId);
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.phone !== undefined && { phone: normalizePhone(dto.phone) }),
+        ...(dto.active !== undefined && { active: dto.active }),
+      },
+      include: { location: { select: { id: true, name: true } } },
+    });
+    return serializeUser(updated);
+  }
+
+  /**
+   * Reset a partner user's password (platform support). Uses the provided
+   * password or generates a one-time one, forces a change on next login, and
+   * revokes all active sessions. Returns the password ONCE so the operator can
+   * hand it over.
+   */
+  async resetUserPassword(partnerId: string, userId: string, dto: PlatformResetPasswordDto) {
+    const user = await this.getUser(partnerId, userId);
+    const password = dto.password?.trim() || this.passwords.generateOtp();
+    const passwordHash = await this.passwords.hash(password);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, mustChangePassword: true },
+      }),
+      // Revoke active sessions so old credentials stop working immediately.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return { password };
+  }
+
+  private async getUser(partnerId: string, userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, partnerId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!user) throw AppException.notFound('User not found');
+    return user;
+  }
+
   // ── guards ────────────────────────────────────────────────
 
   private async assertExists(id: string) {
@@ -237,5 +304,25 @@ function serialize<T extends PartnerWithCount>(partner: T) {
       users: _count?.users ?? 0,
       bookings: _count?.bookings ?? 0,
     },
+  };
+}
+
+type UserWithLocation = {
+  location?: { id: string; name: string } | null;
+} & Record<string, unknown>;
+
+/** Public-safe partner user shape (never expose passwordHash). */
+function serializeUser(u: UserWithLocation) {
+  return {
+    id: u.id as string,
+    name: u.name as string,
+    email: u.email as string,
+    phone: u.phone as string,
+    role: u.role as 'admin' | 'manager',
+    active: u.active as boolean,
+    mustChangePassword: u.mustChangePassword as boolean,
+    lastLogin: u.lastLogin as Date | null,
+    createdAt: u.createdAt as Date,
+    location: u.location ? { id: u.location.id, name: u.location.name } : null,
   };
 }

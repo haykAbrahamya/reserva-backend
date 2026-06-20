@@ -14,3 +14,17 @@ export class SetPartnerActiveDto extends createZodDto(setPartnerActiveSchema) {}
 
 export const setPartnerMarketplaceSchema = z.object({ listed: z.boolean() });
 export class SetPartnerMarketplaceDto extends createZodDto(setPartnerMarketplaceSchema) {}
+
+// ── Partner users (platform support) ──
+export const platformUpdateUserSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  phone: z.string().trim().min(4).max(40).optional(),
+  active: z.boolean().optional(),
+});
+export class PlatformUpdateUserDto extends createZodDto(platformUpdateUserSchema) {}
+
+/** Reset a user's password. Omit `password` to auto-generate a one-time one. */
+export const platformResetPasswordSchema = z.object({
+  password: z.string().min(8).max(100).optional(),
+});
+export class PlatformResetPasswordDto extends createZodDto(platformResetPasswordSchema) {}
