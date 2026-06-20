@@ -25,7 +25,7 @@ interface CreateOpts {
  * the client doesn't need to fetch the catalog to show service/specialist names.
  */
 const BOOKING_INCLUDE = {
-  service: { select: { id: true, name: true, price: true, duration: true } },
+  service: { select: { id: true, name: true, price: true, duration: true, capacity: true } },
   specialist: { select: { id: true, name: true, title: true } },
   location: { select: { id: true, name: true, address: true } },
 } satisfies Prisma.BookingInclude;
