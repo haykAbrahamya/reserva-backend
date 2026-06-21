@@ -148,6 +148,7 @@ export class BookingsService {
             status: dto.status,
             source: opts.source,
             notes: dto.notes,
+            locale: dto.locale ?? null,
             priceAtBooking: service.price,
             createdById: opts.createdById,
           },

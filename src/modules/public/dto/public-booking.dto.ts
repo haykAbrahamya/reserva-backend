@@ -21,5 +21,7 @@ export const publicCreateBookingSchema = z.object({
   clientName: z.string().trim().min(1).max(120),
   clientPhone: z.string().trim().min(4).max(40),
   notes: z.string().trim().max(1000).optional(),
+  /** UI language the booking was made in, for localized reminders later. */
+  locale: z.enum(['en', 'hy', 'ru']).optional(),
 });
 export class PublicCreateBookingDto extends createZodDto(publicCreateBookingSchema) {}

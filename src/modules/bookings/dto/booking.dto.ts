@@ -39,6 +39,8 @@ export const createBookingSchema = z.object({
   startAt: z.coerce.date(),
   notes: z.string().trim().max(2000).optional(),
   status: bookingStatus.default('confirmed'),
+  /** UI language the booking was made in, for localized reminders later. */
+  locale: z.enum(['en', 'hy', 'ru']).optional(),
 });
 export class CreateBookingDto extends createZodDto(createBookingSchema) {}
 

@@ -323,6 +323,10 @@ model Booking {
   source  BookingSource @default(backoffice)
   notes   String?
 
+  /// UI language the customer booked in ('en' | 'hy' | 'ru'). Used to localize
+  /// reminder/confirmation messages later. Null for older/backoffice bookings.
+  locale  String?
+
   /// Price captured at booking time (service price may change later).
   priceAtBooking Int @default(0)
 

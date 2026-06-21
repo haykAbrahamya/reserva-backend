@@ -125,6 +125,7 @@ export class PublicBookingService {
           clientPhone: dto.clientPhone,
           startAt,
           notes: dto.notes,
+          locale: dto.locale,
           status: partner.autoConfirmBookings ? 'confirmed' : 'pending',
         },
         { source: BookingSource.public },
@@ -161,6 +162,7 @@ export class PublicBookingService {
             clientPhone: dto.clientPhone,
             startAt,
             notes: dto.notes,
+            locale: dto.locale,
             // Honour the partner's setting: auto-confirm, else leave pending for
             // staff to confirm manually in the backoffice.
             status: partner.autoConfirmBookings ? 'confirmed' : 'pending',
