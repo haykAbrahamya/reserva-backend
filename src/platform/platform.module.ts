@@ -7,6 +7,8 @@ import { PlatformStaffController } from './staff/platform-staff.controller';
 import { PlatformStaffService } from './staff/platform-staff.service';
 import { PlatformStatsController } from './stats/platform-stats.controller';
 import { PlatformStatsService } from './stats/platform-stats.service';
+import { PlatformDemoRequestsController } from './demo-requests/platform-demo-requests.controller';
+import { DemoRequestsModule } from '@/modules/demo-requests/demo-requests.module';
 import { PlatformAuthGuard } from './guards/platform-auth.guard';
 import { PlatformRolesGuard } from './guards/platform-roles.guard';
 
@@ -17,11 +19,13 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
  * PlatformAuthGuard, which verifies a distinct 'platform-access' token type.
  */
 @Module({
+  imports: [DemoRequestsModule],
   controllers: [
     PlatformAuthController,
     PlatformPartnersController,
     PlatformStaffController,
     PlatformStatsController,
+    PlatformDemoRequestsController,
   ],
   providers: [
     PlatformAuthService,

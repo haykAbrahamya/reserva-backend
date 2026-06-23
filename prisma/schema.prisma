@@ -554,3 +554,29 @@ model PendingRegistration {
   @@index([slug])
   @@map("pending_registrations")
 }
+
+// ── Demo requests (public "Book a demo" form → internal console) ──
+
+enum DemoRequestStatus {
+  new
+  done
+}
+
+/// A lead from the public landing "Book a demo" form. No auth — anyone can
+/// submit; platform staff triage them in the internal console (mark done).
+model DemoRequest {
+  id        String            @id
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  notes     String?
+  status    DemoRequestStatus @default(new)
+  /// Platform user who marked it handled (light audit trail).
+  handledBy String?
+  handledAt DateTime?
+  createdAt DateTime          @default(now())
+
+  @@index([status, createdAt])
+  @@map("demo_requests")
+}
