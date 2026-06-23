@@ -339,6 +339,7 @@ model Booking {
   specialist Specialist? @relation(fields: [specialistId], references: [id], onDelete: Restrict)
   service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  pushSubscriptions ClientPushSubscription[]
 
   // Calendar/list queries are almost always tenant + time-window scoped.
   @@index([partnerId, startAt])
@@ -434,6 +435,27 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+/// Web Push subscription for a public CLIENT (anonymous — no login), scoped to a
+/// single booking. Lets us notify the customer's device about that booking's
+/// status changes (confirmed/rescheduled/cancelled) and reminders. Deleted with
+/// the booking. Distinct from PushSubscription (which is for backoffice staff).
+model ClientPushSubscription {
+  id        String   @id
+  bookingId String
+  /// Push service endpoint URL (unique per browser/device subscription).
+  endpoint  String   @unique
+  /// Encryption keys from the browser PushSubscription (for payload encryption).
+  p256dh    String
+  auth      String
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("client_push_subscriptions")
 }
 
 /// Hashed, rotatable refresh tokens. Enables logout + revoke-on-rotation.

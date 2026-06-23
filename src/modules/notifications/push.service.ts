@@ -105,4 +105,53 @@ export class PushService implements OnModuleInit {
       await this.prisma.pushSubscription.deleteMany({ where: { endpoint: { in: dead } } });
     }
   }
+
+  // ── Public client push (anonymous, scoped to a single booking) ──
+
+  /** Save/refresh a client's push subscription for a booking (idempotent). */
+  async subscribeClient(bookingId: string, sub: PushSubscriptionInput, userAgent = '') {
+    await this.prisma.clientPushSubscription.upsert({
+      where: { endpoint: sub.endpoint },
+      create: {
+        id: newId(),
+        bookingId,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        userAgent,
+      },
+      // Re-point to this booking (same device re-subscribing for a new booking).
+      update: { bookingId, p256dh: sub.keys.p256dh, auth: sub.keys.auth, userAgent },
+    });
+  }
+
+  /** Push a payload to every device subscribed to this booking. Best-effort. */
+  async notifyBooking(bookingId: string, payload: PushPayload): Promise<void> {
+    if (!this.enabled) return;
+
+    const subs = await this.prisma.clientPushSubscription.findMany({ where: { bookingId } });
+    if (subs.length === 0) return;
+
+    const body = JSON.stringify(payload);
+    const dead: string[] = [];
+
+    await Promise.all(
+      subs.map(async (s) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            body,
+          );
+        } catch (err) {
+          const status = (err as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) dead.push(s.endpoint);
+          else this.logger.warn(`Client push failed (${status ?? 'err'}) for ${s.id}`);
+        }
+      }),
+    );
+
+    if (dead.length) {
+      await this.prisma.clientPushSubscription.deleteMany({ where: { endpoint: { in: dead } } });
+    }
+  }
 }

@@ -5,6 +5,7 @@ import { NotificationsService } from './notifications.service';
 import { TelegramService } from './telegram.service';
 import { TelegramLinkService } from './telegram-link.service';
 import { PushController } from './push.controller';
+import { ClientPushController } from './client-push.controller';
 import { NotificationsController } from './notifications.controller';
 import { TelegramController } from './telegram.controller';
 
@@ -18,7 +19,7 @@ import { TelegramController } from './telegram.controller';
  * - NotificationsService/Controller = the in-app feed (bell) API.
  */
 @Module({
-  controllers: [PushController, NotificationsController, TelegramController],
+  controllers: [PushController, ClientPushController, NotificationsController, TelegramController],
   providers: [
     PushService,
     BookingNotifier,

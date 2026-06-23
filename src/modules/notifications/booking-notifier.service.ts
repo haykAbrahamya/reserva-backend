@@ -23,7 +23,31 @@ interface NotifiableBooking {
   startAt: Date | string;
   service?: { name: string } | null;
   specialist?: { name: string } | null;
+  /** UI language the booking was made in ('en'|'hy'|'ru'), for localized push. */
+  locale?: string | null;
 }
+
+type Lang = 'en' | 'hy' | 'ru';
+
+/** Short, plain-text push copy per event, per language (title + body). The
+ *  salon name is interpolated; events not meant for customers are omitted. */
+const PUSH_COPY: Record<Lang, Partial<Record<BookingEvent, { title: string; body: (salon: string, when: string) => string }>>> = {
+  en: {
+    confirmed:   { title: 'Booking confirmed ✓',  body: (s, w) => `Your appointment at ${s} is confirmed — ${w}.` },
+    rescheduled: { title: 'Booking rescheduled',  body: (s, w) => `Your appointment at ${s} was moved to ${w}.` },
+    cancelled:   { title: 'Booking cancelled',    body: (s) => `Your appointment at ${s} was cancelled.` },
+  },
+  hy: {
+    confirmed:   { title: 'Ամրագրումը հաստատվեց ✓', body: (s, w) => `${s}-ի ձեր այցը հաստատված է՝ ${w}։` },
+    rescheduled: { title: 'Ամրագրումը տեղափոխվեց',  body: (s, w) => `${s}-ի ձեր այցը տեղափոխվեց՝ ${w}։` },
+    cancelled:   { title: 'Ամրագրումը չեղարկվեց',    body: (s) => `${s}-ի ձեր այցը չեղարկվել է։` },
+  },
+  ru: {
+    confirmed:   { title: 'Запись подтверждена ✓', body: (s, w) => `Ваша запись в ${s} подтверждена — ${w}.` },
+    rescheduled: { title: 'Запись перенесена',     body: (s, w) => `Ваша запись в ${s} перенесена на ${w}.` },
+    cancelled:   { title: 'Запись отменена',       body: (s) => `Ваша запись в ${s} отменена.` },
+  },
+};
 
 /** Customer-facing message per event (the salon name is prepended). Events the
  *  customer shouldn't be bothered with (e.g. internal "no-show") are omitted. */
@@ -99,6 +123,34 @@ export class BookingNotifier {
     this.notifyCustomer(event, booking).catch((e) =>
       this.logger.warn(`Customer telegram notification failed: ${(e as Error).message}`),
     );
+    // Customer web-push (per-booking subscription) — independent best-effort.
+    this.notifyCustomerPush(event, booking).catch((e) =>
+      this.logger.warn(`Customer push notification failed: ${(e as Error).message}`),
+    );
+  }
+
+  /** Push the booking's CUSTOMER device(s) about a status change (if subscribed). */
+  private async notifyCustomerPush(event: BookingEvent, b: NotifiableBooking): Promise<void> {
+    const lang: Lang = (b.locale === 'hy' || b.locale === 'ru' ? b.locale : 'en');
+    const copy = PUSH_COPY[lang][event];
+    if (!copy) return; // event not surfaced to customers
+
+    // Resolve the salon name (and locale fallback) without burdening callers.
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: b.id },
+      select: { locale: true, partner: { select: { name: true } } },
+    });
+    const realLang: Lang =
+      booking?.locale === 'hy' || booking?.locale === 'ru' ? booking.locale : lang;
+    const c = PUSH_COPY[realLang][event] ?? copy;
+    const salon = booking?.partner?.name ?? 'the salon';
+    const when = formatWhen(b.startAt);
+
+    await this.push.notifyBooking(b.id, {
+      title: c.title,
+      body: c.body(salon, when),
+      tag: `booking-${b.id}`,
+    });
   }
 
   /** Notify the booking's CUSTOMER over Telegram, if they've connected the bot. */
