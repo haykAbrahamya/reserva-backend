@@ -24,6 +24,7 @@ import { UsersModule } from './modules/users/users.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SignupModule } from './modules/signup/signup.module';
 import { DemoRequestsModule } from './modules/demo-requests/demo-requests.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { PlatformModule } from './platform/platform.module';
 import { HealthController } from './health.controller';
 
@@ -65,6 +66,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     SignupModule,
     DemoRequestsModule,
+    AnalyticsModule,
     PlatformModule,
   ],
   controllers: [HealthController],

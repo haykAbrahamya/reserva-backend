@@ -580,3 +580,32 @@ model DemoRequest {
   @@index([status, createdAt])
   @@map("demo_requests")
 }
+
+/// One row per page view on the public site (reserva.am). Written by the public
+/// /public/visits endpoint; enrichment fields are derived server-side from the
+/// request IP (geoip-lite) and User-Agent (ua-parser-js), so all are nullable.
+model VisitorEvent {
+  id         String   @id
+  ip         String?
+  userAgent  String?
+  // Parsed from the User-Agent.
+  deviceType String? // mobile | tablet | desktop | console | smarttv | wearable | embedded
+  browser    String?
+  browserVer String?
+  os         String?
+  osVer      String?
+  // Page context sent by the client.
+  path       String?
+  host       String?
+  referrer   String?
+  language   String?
+  screenW    Int?
+  screenH    Int?
+  // Derived from the IP.
+  country    String?
+  city       String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("visitor_events")
+}

@@ -16,6 +16,11 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
+  // Behind nginx (single trusted hop): trust X-Forwarded-For so req.ip is the
+  // real client IP, not the proxy. Needed for visitor analytics + accurate
+  // per-IP throttling.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Error monitoring — no-op if SENTRY_DSN is unset (dev/local).
   initSentry(config.get<string>('SENTRY_DSN'), config.get<string>('SENTRY_ENV'));
 
