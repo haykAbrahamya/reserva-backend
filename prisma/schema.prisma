@@ -100,6 +100,8 @@ model PartnerPresentation {
   partnerId String  @id
   tagline   String  @default("")
   about     String  @default("")
+  /// Optional brand logo URL. Shown instead of the name initial where set.
+  logoUrl   String  @default("")
   hours     String  @default("") // human-readable summary, e.g. "Mon–Sat · 10:00–19:00"
   /// Public social links (full URLs). Empty = not shown on the booking page.
   instagram String  @default("")

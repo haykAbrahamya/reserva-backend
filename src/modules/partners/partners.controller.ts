@@ -86,6 +86,29 @@ export class PartnersController {
     return this.gallery.reorder(user.partnerId, dto.urls);
   }
 
+  // ── Brand logo (admin) ────────────────────────────────────
+
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @Roles('admin')
+  @Post('partner/logo')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  @ApiOperation({ summary: 'Upload the partner brand logo (admin)' })
+  uploadLogo(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: { buffer: Buffer; mimetype: string },
+  ) {
+    return this.gallery.setLogo(user.partnerId, file);
+  }
+
+  @ApiBearerAuth()
+  @Roles('admin')
+  @Delete('partner/logo')
+  @ApiOperation({ summary: 'Remove the partner brand logo (admin)' })
+  removeLogo(@CurrentUser() user: AuthUser) {
+    return this.gallery.removeLogo(user.partnerId);
+  }
+
   // Public partner read lives in PublicController (GET public/partners/:slug).
 
   // ── Internal provisioning (internal-backoffice only) ──────

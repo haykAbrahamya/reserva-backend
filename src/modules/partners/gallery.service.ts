@@ -116,6 +116,60 @@ export class GalleryService {
    * Remove a tile by its url. Deletes the file from disk too (best-effort — a
    * missing file never blocks the DB update). Returns the updated gallery.
    */
+  /** Process + persist a brand logo; store its url on the presentation. */
+  async setLogo(
+    partnerId: string,
+    file: { buffer: Buffer; mimetype: string },
+  ): Promise<{ logoUrl: string }> {
+    if (!file?.buffer?.length) {
+      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'No image file was provided');
+    }
+    if (!file.mimetype?.startsWith('image/')) {
+      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'Only image files are allowed');
+    }
+    let webp: Buffer;
+    try {
+      webp = await sharp(file.buffer)
+        .rotate()
+        .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toBuffer();
+    } catch (err) {
+      this.logger.warn(`sharp failed to process logo for ${partnerId}: ${String(err)}`);
+      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'That image could not be processed');
+    }
+    const fileName = `logo-${newId()}.webp`;
+    const dir = join(this.uploadsDir, partnerId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, fileName), webp);
+    const logoUrl = this.publicUrl(`${partnerId}/${fileName}`);
+    await this.prisma.partnerPresentation.upsert({
+      where: { partnerId },
+      create: { partnerId, logoUrl },
+      update: { logoUrl },
+    });
+    return { logoUrl };
+  }
+
+  /** Clear the logo (file best-effort deleted) → falls back to the name initial. */
+  async removeLogo(partnerId: string): Promise<{ logoUrl: string }> {
+    const pres = await this.prisma.partnerPresentation.findUnique({
+      where: { partnerId },
+      select: { logoUrl: true },
+    });
+    const url = pres?.logoUrl ?? '';
+    const marker = `/${partnerId}/`;
+    const idx = url.lastIndexOf(marker);
+    if (idx !== -1) {
+      const fileName = url.slice(idx + marker.length);
+      if (fileName && !fileName.includes('/') && !fileName.includes('..')) {
+        try { await unlink(join(this.uploadsDir, partnerId, fileName)); } catch { /* gone */ }
+      }
+    }
+    await this.prisma.partnerPresentation.update({ where: { partnerId }, data: { logoUrl: '' } });
+    return { logoUrl: '' };
+  }
+
   async removeImage(partnerId: string, url: string): Promise<GalleryItem[]> {
     const gallery = await this.readGallery(partnerId);
     const next = gallery.filter((g) => g.url !== url);
