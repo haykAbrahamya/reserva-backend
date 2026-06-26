@@ -6,6 +6,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
+import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import type { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class PartnersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly reviews: SpecialistReviewsService,
   ) {}
 
   /**
@@ -50,7 +52,10 @@ export class PartnersService {
       },
     });
     if (!partner) throw AppException.notFound('Salon not found');
-    return serializePartner(partner);
+    // Enrich each specialist with its computed rating (avg + count) so every
+    // place that shows a specialist in the client app can show real stars.
+    const aggregates = await this.reviews.aggregatesFor(partner.specialists.map((s) => s.id));
+    return serializePartner(partner, aggregates);
   }
 
   /**
@@ -182,17 +187,27 @@ export class PartnersService {
   }
 }
 
-type SpecialistWithServices = { services?: { serviceId: string }[] } & Record<string, unknown>;
+type SpecialistWithServices = { id?: string; services?: { serviceId: string }[] } & Record<string, unknown>;
 
-/** Flatten specialist service-links into serviceIds[] for the API shape. */
-function serializePartner<T extends Record<string, unknown>>(partner: T) {
+/** Flatten specialist service-links into serviceIds[] for the API shape, and
+ *  attach the computed rating (avg + count) when an aggregates map is given. */
+function serializePartner<T extends Record<string, unknown>>(
+  partner: T,
+  aggregates?: Map<string, { rating: number; reviewCount: number }>,
+) {
   const specialists = partner.specialists as SpecialistWithServices[] | undefined;
   if (!specialists) return partner;
   return {
     ...partner,
     specialists: specialists.map((sp) => {
       const { services, ...rest } = sp;
-      return { ...rest, serviceIds: (services ?? []).map((s) => s.serviceId) };
+      const agg = sp.id ? aggregates?.get(sp.id) : undefined;
+      return {
+        ...rest,
+        serviceIds: (services ?? []).map((s) => s.serviceId),
+        rating: agg?.rating ?? 0,
+        reviewCount: agg?.reviewCount ?? 0,
+      };
     }),
   };
 }

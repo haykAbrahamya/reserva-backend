@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SpecialistsService } from './specialists.service';
 import { TimeOffService } from './time-off.service';
+import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import { CurrentUser } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import {
@@ -18,6 +19,7 @@ export class SpecialistsController {
   constructor(
     private readonly specialists: SpecialistsService,
     private readonly timeOff: TimeOffService,
+    private readonly reviews: SpecialistReviewsService,
   ) {}
 
   // ── Specialists ───────────────────────────────────────────
@@ -51,6 +53,25 @@ export class SpecialistsController {
   @ApiOperation({ summary: 'Soft-delete a specialist' })
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.specialists.remove(user.partnerId, id);
+  }
+
+  // ── Reviews (nested under a specialist) ───────────────────
+
+  @Get(':id/reviews')
+  @ApiOperation({ summary: "List a specialist's reviews" })
+  listReviews(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.reviews.listForPartner(user.partnerId, id);
+  }
+
+  @Delete(':id/reviews/:reviewId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a review from a specialist' })
+  async removeReview(
+    @CurrentUser() user: AuthUser,
+    @Param('id') _id: string,
+    @Param('reviewId') reviewId: string,
+  ) {
+    await this.reviews.deleteForPartner(user.partnerId, reviewId);
   }
 
   // ── Time off (nested under a specialist) ──────────────────

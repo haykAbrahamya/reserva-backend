@@ -211,10 +211,36 @@ model Specialist {
   services  SpecialistService[]
   timeOff   SpecialistTimeOff[]
   bookings  Booking[]
+  reviews   SpecialistReview[]
 
   @@index([partnerId, deletedAt])
   @@index([locationId, active])
   @@map("specialists")
+}
+
+/// Public review left for a specialist on the booking page. No auth — the
+/// reviewer optionally gives a name (else shown as "Anonymous"); stars are
+/// required, text is optional. Published instantly; partners delete unwanted
+/// ones from the backoffice. Ratings shown in the client app are computed
+/// averages of these rows (never fabricated).
+model SpecialistReview {
+  id           String   @id
+  specialistId String
+  partnerId    String // denormalized for fast tenant-scoped queries
+  /// Reviewer's display name; empty → rendered as "Anonymous".
+  author       String   @default("")
+  /// 1–5 stars (enforced in the DTO).
+  rating       Int
+  /// Optional free-text comment.
+  text         String   @default("")
+
+  createdAt DateTime @default(now())
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  @@index([specialistId, createdAt])
+  @@index([partnerId, createdAt])
+  @@map("specialist_reviews")
 }
 
 /// Join table: which services a specialist can perform (many-to-many).
