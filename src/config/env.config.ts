@@ -50,7 +50,7 @@ const envSchema = z.object({
   SMTP_USER: z.string().default(''),
   /** Gmail App Password (not the account password). */
   SMTP_PASS: z.string().default(''),
-  MAIL_FROM: z.string().default('Reserva <abrahamyan.hayk.03@gmail.com>'),
+  MAIL_FROM: z.string().default('Reserva <reserva.platform@gmail.com>'),
 
   /** Backoffice base URL — used to build the signup activation magic link. */
   BACKOFFICE_URL: z.string().default('https://backoffice.reserva.am'),
