@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PlatformPartnersService } from './platform-partners.service';
 import { Public } from '@/auth/decorators';
 import { PlatformAuthGuard } from '../guards/platform-auth.guard';
 import { PlatformRolesGuard } from '../guards/platform-roles.guard';
+import { PlatformRoles } from '../platform.decorators';
 import { CreatePartnerDto, UpdatePartnerDto } from '@/modules/partners/dto/partner.dto';
 import {
   ListPlatformPartnersQueryDto,
@@ -62,6 +63,14 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Enable/disable the public booking flow (contact-only mode)' })
   setBookings(@Param('id') id: string, @Body() dto: SetPartnerBookingsDto) {
     return this.partners.setBookings(id, dto.enabled);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @PlatformRoles('owner')
+  @ApiOperation({ summary: 'PERMANENTLY delete a partner and all connected data (owner only)' })
+  async hardDelete(@Param('id') id: string) {
+    await this.partners.hardDelete(id);
   }
 
   @Get(':id/users')

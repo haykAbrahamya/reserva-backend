@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { rm } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
@@ -21,9 +24,12 @@ import type {
  */
 @Injectable()
 export class PlatformPartnersService {
+  private readonly logger = new Logger(PlatformPartnersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(q: ListPlatformPartnersQueryDto) {
@@ -203,6 +209,57 @@ export class PlatformPartnersService {
     await this.assertExists(id);
     await this.prisma.partner.update({ where: { id }, data: { bookingsEnabled: enabled } });
     return this.get(id);
+  }
+
+  /**
+   * PERMANENTLY delete a partner and ALL connected data — bookings, specialists,
+   * services, locations, clients, users, reviews, notifications, presentation —
+   * plus the partner's uploaded images on disk. Irreversible.
+   *
+   * Done as one transaction in strict dependency order so the inter-child
+   * Restrict FKs (Booking → service/specialist/location/client) never block the
+   * delete (relying on a single Partner cascade is not order-safe here).
+   */
+  async hardDelete(id: string) {
+    // Allow deleting already soft-deleted partners too (don't filter deletedAt).
+    const partner = await this.prisma.partner.findUnique({ where: { id }, select: { id: true } });
+    if (!partner) throw AppException.notFound('Partner not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Bookings first — they Restrict-reference services/specialists/locations
+      //    /clients, and cascade-delete their own client push subscriptions.
+      await tx.booking.deleteMany({ where: { partnerId: id } });
+
+      // 2. Specialist sub-tables, then specialists (location is Restrict).
+      await tx.specialistReview.deleteMany({ where: { partnerId: id } });
+      await tx.specialistTimeOff.deleteMany({ where: { partnerId: id } });
+      await tx.specialistService.deleteMany({ where: { specialist: { partnerId: id } } });
+      await tx.specialist.deleteMany({ where: { partnerId: id } });
+
+      // 3. Catalog + people.
+      await tx.service.deleteMany({ where: { partnerId: id } });
+      await tx.location.deleteMany({ where: { partnerId: id } });
+      await tx.client.deleteMany({ where: { partnerId: id } });
+
+      // 4. In-app notifications (no partner cascade) + users (cascade their own
+      //    notifications/push subs/refresh tokens).
+      await tx.notification.deleteMany({ where: { partnerId: id } });
+      await tx.user.deleteMany({ where: { partnerId: id } });
+
+      // 5. Presentation, then the partner row itself.
+      await tx.partnerPresentation.deleteMany({ where: { partnerId: id } });
+      await tx.partner.delete({ where: { id } });
+    });
+
+    // 6. Best-effort: remove the partner's uploaded images directory from disk.
+    try {
+      const uploadsDir = resolve(this.config.get<string>('UPLOADS_DIR') ?? './uploads');
+      await rm(join(uploadsDir, id), { recursive: true, force: true });
+    } catch (err) {
+      this.logger.warn(`Failed to remove uploads for deleted partner ${id}: ${String(err)}`);
+    }
+
+    return { id };
   }
 
   // ── Partner's users (platform support) ────────────────────

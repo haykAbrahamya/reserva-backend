@@ -63,4 +63,10 @@ export class DemoRequestsService {
       },
     });
   }
+
+  /** Permanently remove a demo request. */
+  async remove(id: string) {
+    const { count } = await this.prisma.demoRequest.deleteMany({ where: { id } });
+    if (count === 0) throw AppException.notFound('Demo request not found');
+  }
 }

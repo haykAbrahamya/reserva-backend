@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '@/auth/decorators';
 import { DemoRequestsService } from '@/modules/demo-requests/demo-requests.service';
@@ -34,5 +34,12 @@ export class PlatformDemoRequestsController {
     @CurrentPlatformUser() user: PlatformAuthUser,
   ) {
     return this.service.setStatus(id, dto.status, user.id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a demo request' })
+  async remove(@Param('id') id: string) {
+    await this.service.remove(id);
   }
 }
