@@ -69,6 +69,12 @@ model Partner {
   /// confirm them manually. When true, public bookings are auto-confirmed.
   autoConfirmBookings Boolean @default(false)
 
+  /// When true (default), the public page (/p/:slug) shows booking CTAs and the
+  /// booking flow works. When false, the salon is "contact-only": all booking
+  /// CTAs are hidden/replaced with call/contact actions and the public booking
+  /// endpoints reject. Togglable by the partner (Settings) and platform staff.
+  bookingsEnabled Boolean @default(true)
+
   /// Whether this salon is featured in the public Reserva marketplace (/salons).
   /// Curated: only togglable from the internal-backoffice (platform staff). The
   /// partner sees it read-only. Default off — salons opt in via the platform.

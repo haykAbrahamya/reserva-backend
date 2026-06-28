@@ -15,6 +15,9 @@ export class SetPartnerActiveDto extends createZodDto(setPartnerActiveSchema) {}
 export const setPartnerMarketplaceSchema = z.object({ listed: z.boolean() });
 export class SetPartnerMarketplaceDto extends createZodDto(setPartnerMarketplaceSchema) {}
 
+export const setPartnerBookingsSchema = z.object({ enabled: z.boolean() });
+export class SetPartnerBookingsDto extends createZodDto(setPartnerBookingsSchema) {}
+
 // ── Partner users (platform support) ──
 export const platformUpdateUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),

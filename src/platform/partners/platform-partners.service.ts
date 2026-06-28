@@ -147,6 +147,7 @@ export class PlatformPartnersService {
           ...(rest.type !== undefined && { type: rest.type }),
           ...(rest.accent !== undefined && { accent: rest.accent }),
           ...(rest.active !== undefined && { active: rest.active }),
+          ...(rest.bookingsEnabled !== undefined && { bookingsEnabled: rest.bookingsEnabled }),
         },
       });
 
@@ -194,6 +195,13 @@ export class PlatformPartnersService {
   async setMarketplace(id: string, listed: boolean) {
     await this.assertExists(id);
     await this.prisma.partner.update({ where: { id }, data: { marketplaceListed: listed } });
+    return this.get(id);
+  }
+
+  /** Turn the public booking flow on/off (contact-only mode). Platform-only. */
+  async setBookings(id: string, enabled: boolean) {
+    await this.assertExists(id);
+    await this.prisma.partner.update({ where: { id }, data: { bookingsEnabled: enabled } });
     return this.get(id);
   }
 

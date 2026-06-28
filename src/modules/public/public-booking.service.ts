@@ -86,6 +86,12 @@ export class PublicBookingService {
   async createBooking(slug: string, dto: PublicCreateBookingDto) {
     const partner = await this.resolvePartner(slug);
 
+    // Contact-only salons can't take public bookings (defense in depth — the UI
+    // already hides the CTAs, but the endpoint must reject too).
+    if (!partner.bookingsEnabled) {
+      throw AppException.badRequest(ErrorCode.SERVICE_NOT_OFFERED, 'Online booking is not available for this salon');
+    }
+
     const service = await this.prisma.service.findFirst({
       where: { id: dto.serviceId, partnerId: partner.id, deletedAt: null, active: true },
       select: { id: true, duration: true, requiresSpecialist: true, capacity: true },
@@ -188,7 +194,7 @@ export class PublicBookingService {
   private async resolvePartner(slug: string) {
     const partner = await this.prisma.partner.findFirst({
       where: { slug, active: true, deletedAt: null },
-      select: { id: true, autoConfirmBookings: true },
+      select: { id: true, autoConfirmBookings: true, bookingsEnabled: true },
     });
     if (!partner) throw AppException.notFound('Salon not found');
     return partner;

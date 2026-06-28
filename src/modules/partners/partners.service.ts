@@ -138,6 +138,9 @@ export class PartnersService {
           ...(rest.autoConfirmBookings !== undefined && {
             autoConfirmBookings: rest.autoConfirmBookings,
           }),
+          ...(rest.bookingsEnabled !== undefined && {
+            bookingsEnabled: rest.bookingsEnabled,
+          }),
         },
       });
 

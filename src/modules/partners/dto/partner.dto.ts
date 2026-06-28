@@ -59,6 +59,7 @@ export const updatePartnerSchema = z.object({
   accent: hexColor.optional(),
   active: z.boolean().optional(),
   autoConfirmBookings: z.boolean().optional(),
+  bookingsEnabled: z.boolean().optional(),
   /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
   slug: z
     .string()
