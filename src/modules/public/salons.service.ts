@@ -44,6 +44,16 @@ export class SalonsService {
    * case-insensitive substring. Only salons with a public slug are returned
    * (others have no booking page to link to).
    */
+  /** Slugs of all publicly-listed salons, for the sitemap. */
+  async sitemapSlugs(): Promise<string[]> {
+    const rows = await this.prisma.partner.findMany({
+      where: { marketplaceListed: true, active: true, deletedAt: null, slug: { not: null } },
+      select: { slug: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => r.slug!).filter(Boolean);
+  }
+
   async list(search: SalonSearch = {}): Promise<SalonCard[]> {
     const and: Prisma.PartnerWhereInput[] = [
       { marketplaceListed: true, active: true, deletedAt: null, slug: { not: null } },
