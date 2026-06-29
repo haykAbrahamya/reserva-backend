@@ -18,6 +18,9 @@ export class SetPartnerMarketplaceDto extends createZodDto(setPartnerMarketplace
 export const setPartnerBookingsSchema = z.object({ enabled: z.boolean() });
 export class SetPartnerBookingsDto extends createZodDto(setPartnerBookingsSchema) {}
 
+export const setPartnerKindSchema = z.object({ kind: z.enum(['salon', 'single']) });
+export class SetPartnerKindDto extends createZodDto(setPartnerKindSchema) {}
+
 // ── Partner users (platform support) ──
 export const platformUpdateUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),

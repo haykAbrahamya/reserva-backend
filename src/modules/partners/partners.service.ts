@@ -141,6 +141,7 @@ export class PartnersService {
           ...(rest.bookingsEnabled !== undefined && {
             bookingsEnabled: rest.bookingsEnabled,
           }),
+          ...(rest.kind !== undefined && { kind: rest.kind }),
         },
       });
 

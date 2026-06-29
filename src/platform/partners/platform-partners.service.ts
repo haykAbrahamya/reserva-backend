@@ -17,6 +17,17 @@ import type {
   PlatformResetPasswordDto,
 } from './dto/platform-partner.dto';
 
+/** Default weekly hours for an auto-provisioned solo specialist (Mon–Sat 10–19). */
+const SOLO_DEFAULT_SCHEDULE = {
+  mon: { enabled: true, start: '10:00', end: '19:00' },
+  tue: { enabled: true, start: '10:00', end: '19:00' },
+  wed: { enabled: true, start: '10:00', end: '19:00' },
+  thu: { enabled: true, start: '10:00', end: '19:00' },
+  fri: { enabled: true, start: '10:00', end: '19:00' },
+  sat: { enabled: true, start: '10:00', end: '19:00' },
+  sun: { enabled: false, start: '10:00', end: '19:00' },
+};
+
 /**
  * Platform-scoped partner administration for the internal-backoffice. Unlike the
  * tenant PartnersService (which is scoped to the caller's own partnerId), this
@@ -154,6 +165,7 @@ export class PlatformPartnersService {
           ...(rest.accent !== undefined && { accent: rest.accent }),
           ...(rest.active !== undefined && { active: rest.active }),
           ...(rest.bookingsEnabled !== undefined && { bookingsEnabled: rest.bookingsEnabled }),
+          ...(rest.kind !== undefined && { kind: rest.kind }),
         },
       });
 
@@ -208,6 +220,53 @@ export class PlatformPartnersService {
   async setBookings(id: string, enabled: boolean) {
     await this.assertExists(id);
     await this.prisma.partner.update({ where: { id }, data: { bookingsEnabled: enabled } });
+    return this.get(id);
+  }
+
+  /**
+   * Switch a partner between salon and single. When switching to `single`, make
+   * sure the booking engine has the one location + specialist it needs (provision
+   * them if the partner has none yet) so the public page works immediately.
+   */
+  async setKind(id: string, kind: 'salon' | 'single') {
+    await this.assertExists(id);
+
+    if (kind === 'single') {
+      const [locCount, specCount, partner] = await this.prisma.$transaction([
+        this.prisma.location.count({ where: { partnerId: id, deletedAt: null } }),
+        this.prisma.specialist.count({ where: { partnerId: id, deletedAt: null } }),
+        this.prisma.partner.findUnique({
+          where: { id },
+          select: { name: true, type: true, users: { where: { role: 'admin', deletedAt: null }, take: 1, select: { name: true, phone: true } } },
+        }),
+      ]);
+
+      let locationId: string | null = null;
+      if (locCount === 0) {
+        locationId = newId();
+        await this.prisma.location.create({
+          data: { id: locationId, partnerId: id, name: partner?.name ?? 'Main', address: '', phone: partner?.users[0]?.phone ?? '' },
+        });
+      } else {
+        const first = await this.prisma.location.findFirst({ where: { partnerId: id, deletedAt: null }, select: { id: true } });
+        locationId = first?.id ?? null;
+      }
+      if (specCount === 0 && locationId) {
+        await this.prisma.specialist.create({
+          data: {
+            id: newId(),
+            partnerId: id,
+            locationId,
+            name: partner?.users[0]?.name ?? partner?.name ?? 'Me',
+            title: partner?.type ?? '',
+            phone: partner?.users[0]?.phone ?? '',
+            schedule: SOLO_DEFAULT_SCHEDULE,
+          },
+        });
+      }
+    }
+
+    await this.prisma.partner.update({ where: { id }, data: { kind } });
     return this.get(id);
   }
 

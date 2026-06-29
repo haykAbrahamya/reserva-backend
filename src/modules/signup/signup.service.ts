@@ -13,6 +13,17 @@ import type { SignupDto } from './dto/signup.dto';
 
 const TOKEN_TTL_HOURS = 24;
 
+/** Default weekly hours for an auto-provisioned solo specialist (Mon–Sat 10–19). */
+const SOLO_DEFAULT_SCHEDULE = {
+  mon: { enabled: true, start: '10:00', end: '19:00' },
+  tue: { enabled: true, start: '10:00', end: '19:00' },
+  wed: { enabled: true, start: '10:00', end: '19:00' },
+  thu: { enabled: true, start: '10:00', end: '19:00' },
+  fri: { enabled: true, start: '10:00', end: '19:00' },
+  sat: { enabled: true, start: '10:00', end: '19:00' },
+  sun: { enabled: false, start: '10:00', end: '19:00' },
+};
+
 /** Self-serve partner signup: pending row → emailed magic link → activation. */
 @Injectable()
 export class SignupService {
@@ -56,6 +67,7 @@ export class SignupService {
         tokenHash,
         companyName: dto.companyName,
         companyType: dto.companyType,
+        kind: dto.kind ?? 'salon',
         slug,
         accent: dto.accent,
         adminName: dto.adminName,
@@ -108,6 +120,7 @@ export class SignupService {
           slug, // null when the signup didn't choose one
           name: pending.companyName,
           type: pending.companyType,
+          kind: pending.kind,
           accent: pending.accent,
           presentation: { create: {} }, // defaults; partner edits later
         },
@@ -126,6 +139,28 @@ export class SignupService {
           mustChangePassword: false,
         },
       });
+
+      // A `single` (solo professional) needs the booking engine to work out of
+      // the box, so auto-provision one location + one specialist (the person
+      // themselves). These are presented as "Your address" / "Your hours" in the
+      // backoffice and never shown as a team/branch list.
+      if (pending.kind === 'single') {
+        const locationId = newId();
+        await tx.location.create({
+          data: { id: locationId, partnerId, name: pending.companyName, address: '', phone: pending.adminPhone },
+        });
+        await tx.specialist.create({
+          data: {
+            id: newId(),
+            partnerId,
+            locationId,
+            name: pending.adminName,
+            title: pending.companyType,
+            phone: pending.adminPhone,
+            schedule: SOLO_DEFAULT_SCHEDULE,
+          },
+        });
+      }
 
       await tx.pendingRegistration.update({
         where: { id: pending.id },

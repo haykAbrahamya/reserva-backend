@@ -11,6 +11,8 @@ const phone = z
 export const signupSchema = z.object({
   companyName: z.string().trim().min(2).max(120),
   companyType: z.string().trim().min(1).max(80),
+  /** Salon (team) or single (solo professional). Defaults to salon. */
+  kind: z.enum(['salon', 'single']).optional(),
   accent: hexColor,
   /** Optional preferred slug. If omitted, the partner is created WITHOUT one and
    *  slug.reserva.am 404s until the owner sets it in Settings. */

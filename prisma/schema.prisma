@@ -49,6 +49,14 @@ enum Weekday {
   sun
 }
 
+/// Whether the tenant is a multi-person salon or a solo professional. Drives
+/// presentation only (a `single` has one hidden location + specialist under the
+/// hood); the booking engine is identical for both.
+enum PartnerKind {
+  salon
+  single
+}
+
 // ── Partner (tenant) ────────────────────────────────────────
 
 model Partner {
@@ -61,6 +69,9 @@ model Partner {
   name String
   /// Free-text category shown publicly, e.g. "Aesthetic clinic".
   type String
+
+  /// salon (default) or single (solo professional). Presentation-only flag.
+  kind PartnerKind @default(salon)
 
   // Branding
   accent String // primary brand color (hex)
@@ -117,7 +128,10 @@ model PartnerPresentation {
   /// Hero gradient tints [from, to] + decorative gallery tiles, stored as JSON
   /// since they're presentation-only and read as a blob.
   heroTints Json    @default("[]")
+  /// "Inside" gallery — simple photos of the place. JSON array of tiles.
   gallery   Json    @default("[]")
+  /// "Works" — photos of the work done; tiles may be simple or before/after.
+  works     Json    @default("[]")
 
   updatedAt DateTime @updatedAt
 
@@ -571,6 +585,7 @@ model PendingRegistration {
   companyType String
   slug        String
   accent      String
+  kind        PartnerKind @default(salon)
 
   // Admin details
   adminName    String

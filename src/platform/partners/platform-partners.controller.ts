@@ -11,6 +11,7 @@ import {
   SetPartnerActiveDto,
   SetPartnerMarketplaceDto,
   SetPartnerBookingsDto,
+  SetPartnerKindDto,
   PlatformUpdateUserDto,
   PlatformResetPasswordDto,
 } from './dto/platform-partner.dto';
@@ -63,6 +64,12 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Enable/disable the public booking flow (contact-only mode)' })
   setBookings(@Param('id') id: string, @Body() dto: SetPartnerBookingsDto) {
     return this.partners.setBookings(id, dto.enabled);
+  }
+
+  @Patch(':id/kind')
+  @ApiOperation({ summary: 'Switch partner between salon and single (solo) mode' })
+  setKind(@Param('id') id: string, @Body() dto: SetPartnerKindDto) {
+    return this.partners.setKind(id, dto.kind);
   }
 
   @Delete(':id')

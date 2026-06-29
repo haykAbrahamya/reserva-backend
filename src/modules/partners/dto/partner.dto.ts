@@ -60,6 +60,7 @@ export const updatePartnerSchema = z.object({
   active: z.boolean().optional(),
   autoConfirmBookings: z.boolean().optional(),
   bookingsEnabled: z.boolean().optional(),
+  kind: z.enum(['salon', 'single']).optional(),
   /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
   slug: z
     .string()
@@ -72,8 +73,10 @@ export const updatePartnerSchema = z.object({
 });
 export class UpdatePartnerDto extends createZodDto(updatePartnerSchema) {}
 
-/** Reorder the gallery to this exact list of image urls (drag-to-reorder). */
+/** Reorder a photo list to this exact list of image urls (drag-to-reorder). */
 export const galleryReorderSchema = z.object({
   urls: z.array(z.string().max(500)).max(12),
+  /** Which list to reorder: 'gallery' (Inside) or 'works'. Defaults to gallery. */
+  list: z.enum(['gallery', 'works']).optional(),
 });
 export class GalleryReorderDto extends createZodDto(galleryReorderSchema) {}
