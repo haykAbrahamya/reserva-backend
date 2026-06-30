@@ -201,8 +201,32 @@ function serializePartner<T extends Record<string, unknown>>(
 ) {
   const specialists = partner.specialists as SpecialistWithServices[] | undefined;
   if (!specialists) return partner;
+
+  // Partner-wide rating rollup, computed from REAL specialist reviews (never the
+  // static presentation.rating column). This drives the rating shown at the top
+  // of the client partner page and works for both salons (aggregate of the team)
+  // and singles (their one specialist). Weighted by each specialist's count so a
+  // 5★/1-review specialist doesn't outweigh a 4.6★/50-review one.
+  let weightedSum = 0;
+  let totalReviews = 0;
+  for (const sp of specialists) {
+    const agg = sp.id ? aggregates?.get(sp.id) : undefined;
+    if (agg && agg.reviewCount > 0) {
+      weightedSum += agg.rating * agg.reviewCount;
+      totalReviews += agg.reviewCount;
+    }
+  }
+  const partnerRating = totalReviews > 0 ? Math.round((weightedSum / totalReviews) * 10) / 10 : 0;
+
+  const presentation = partner.presentation as Record<string, unknown> | null | undefined;
+
   return {
     ...partner,
+    // Overwrite the presentation rating/reviews with the computed real values so
+    // the client reads a single, trustworthy source.
+    presentation: presentation
+      ? { ...presentation, rating: partnerRating, reviews: totalReviews }
+      : presentation,
     specialists: specialists.map((sp) => {
       const { services, ...rest } = sp;
       const agg = sp.id ? aggregates?.get(sp.id) : undefined;

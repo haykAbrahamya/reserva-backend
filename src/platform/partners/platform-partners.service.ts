@@ -251,10 +251,12 @@ export class PlatformPartnersService {
         const first = await this.prisma.location.findFirst({ where: { partnerId: id, deletedAt: null }, select: { id: true } });
         locationId = first?.id ?? null;
       }
+      let specialistId: string | null = null;
       if (specCount === 0 && locationId) {
+        specialistId = newId();
         await this.prisma.specialist.create({
           data: {
-            id: newId(),
+            id: specialistId,
             partnerId: id,
             locationId,
             name: partner?.users[0]?.name ?? partner?.name ?? 'Me',
@@ -263,6 +265,25 @@ export class PlatformPartnersService {
             schedule: SOLO_DEFAULT_SCHEDULE,
           },
         });
+      } else if (specCount === 1) {
+        const first = await this.prisma.specialist.findFirst({ where: { partnerId: id, deletedAt: null }, select: { id: true } });
+        specialistId = first?.id ?? null;
+      }
+
+      // Backfill: single-mode has no Specialists page to attach services, so link
+      // every requires-specialist service to the sole specialist. Skip when the
+      // partner has >1 specialist (ambiguous which one to attach to).
+      if (specialistId) {
+        const services = await this.prisma.service.findMany({
+          where: { partnerId: id, deletedAt: null, requiresSpecialist: true },
+          select: { id: true },
+        });
+        if (services.length) {
+          await this.prisma.specialistService.createMany({
+            data: services.map((sv) => ({ specialistId, serviceId: sv.id })),
+            skipDuplicates: true,
+          });
+        }
       }
     }
 

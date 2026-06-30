@@ -49,15 +49,56 @@ export class ServicesService {
     return service;
   }
 
-  create(partnerId: string, dto: CreateServiceDto) {
-    return this.prisma.service.create({
+  async create(partnerId: string, dto: CreateServiceDto) {
+    const service = await this.prisma.service.create({
       data: { id: newId(), partnerId, ...dto },
+    });
+
+    // Single-mode partners have no Specialists page, so there's no UI to attach
+    // a service to a specialist. Auto-link every new service to the partner's
+    // sole specialist so it becomes bookable immediately. Skip facility/entry
+    // services that aren't tied to a person.
+    if (service.requiresSpecialist) {
+      await this.linkToSoloSpecialist(partnerId, service.id);
+    }
+
+    return service;
+  }
+
+  /** When the partner is `single`, attach the given service to its one (and only)
+   * specialist. No-op for salons or if the specialist is missing. */
+  private async linkToSoloSpecialist(partnerId: string, serviceId: string) {
+    const partner = await this.prisma.partner.findUnique({
+      where: { id: partnerId },
+      select: { kind: true },
+    });
+    if (partner?.kind !== 'single') return;
+
+    const specialist = await this.prisma.specialist.findFirst({
+      where: { partnerId, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!specialist) return;
+
+    await this.prisma.specialistService.upsert({
+      where: { specialistId_serviceId: { specialistId: specialist.id, serviceId } },
+      create: { specialistId: specialist.id, serviceId },
+      update: {},
     });
   }
 
   async update(partnerId: string, id: string, dto: UpdateServiceDto) {
     await this.get(partnerId, id); // tenant-scoped existence check
-    return this.prisma.service.update({ where: { id }, data: dto });
+    const service = await this.prisma.service.update({ where: { id }, data: dto });
+
+    // A service flipped from facility → requires-specialist needs the same
+    // auto-link in single mode (upsert makes this idempotent if already linked).
+    if (service.requiresSpecialist) {
+      await this.linkToSoloSpecialist(partnerId, service.id);
+    }
+
+    return service;
   }
 
   /** Soft-delete so historical bookings keep their service reference. */
