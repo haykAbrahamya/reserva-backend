@@ -1,3 +1,10 @@
+// Pin the process timezone BEFORE anything computes a Date. All booking/slot
+// logic works in "Armenia-local" wall-clock time (e.g. `new Date('2026-06-30T00:00:00')`
+// and `getHours()`), so the server must run in Asia/Yerevan regardless of where
+// it's deployed — otherwise a UTC host shows already-passed slots as bookable.
+// Overridable via the TZ env var for non-AM deployments/tests.
+process.env.TZ = process.env.TZ || 'Asia/Yerevan';
+
 import { NestFactory } from '@nestjs/core';
 import { Logger, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
