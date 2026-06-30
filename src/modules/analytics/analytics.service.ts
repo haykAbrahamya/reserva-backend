@@ -63,4 +63,10 @@ export class AnalyticsService {
     ]);
     return paginate(items, total, q.page, q.pageSize);
   }
+
+  /** Platform: wipe the entire visit history. Returns how many rows were removed. */
+  async clearAll(): Promise<{ deleted: number }> {
+    const { count } = await this.prisma.visitorEvent.deleteMany({});
+    return { deleted: count };
+  }
 }

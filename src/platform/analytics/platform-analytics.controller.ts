@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '@/auth/decorators';
 import { AnalyticsService } from '@/modules/analytics/analytics.service';
@@ -18,5 +18,11 @@ export class PlatformAnalyticsController {
   @ApiOperation({ summary: 'List page-view visits (paginated, newest first)' })
   list(@Query() q: ListVisitorEventsQueryDto) {
     return this.service.list(q);
+  }
+
+  @Delete()
+  @ApiOperation({ summary: 'Clear the entire visit history' })
+  clearAll() {
+    return this.service.clearAll();
   }
 }
