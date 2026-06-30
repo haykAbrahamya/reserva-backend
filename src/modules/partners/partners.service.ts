@@ -155,6 +155,7 @@ export class PartnersService {
             hours: presentation.hours ?? '',
             instagram: presentation.instagram ?? '',
             facebook: presentation.facebook ?? '',
+            whatsapp: presentation.whatsapp ?? '',
             rating: presentation.rating ?? 0,
             reviews: presentation.reviews ?? 0,
             heroTints: (presentation.heroTints ?? []) as Prisma.InputJsonValue,
@@ -166,6 +167,7 @@ export class PartnersService {
             ...(presentation.hours !== undefined && { hours: presentation.hours }),
             ...(presentation.instagram !== undefined && { instagram: presentation.instagram }),
             ...(presentation.facebook !== undefined && { facebook: presentation.facebook }),
+            ...(presentation.whatsapp !== undefined && { whatsapp: presentation.whatsapp }),
             ...(presentation.rating !== undefined && { rating: presentation.rating }),
             ...(presentation.reviews !== undefined && { reviews: presentation.reviews }),
             ...(presentation.heroTints !== undefined && {

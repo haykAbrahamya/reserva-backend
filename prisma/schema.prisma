@@ -123,6 +123,9 @@ model PartnerPresentation {
   /// Public social links (full URLs). Empty = not shown on the booking page.
   instagram String  @default("")
   facebook  String  @default("")
+  /// WhatsApp number in international digits (e.g. "37491234567"), used to build
+  /// a wa.me click-to-chat link on the public page. Empty = not shown.
+  whatsapp  String  @default("")
   rating    Decimal @default(0) @db.Decimal(2, 1)
   reviews   Int     @default(0)
   /// Hero gradient tints [from, to] + decorative gallery tiles, stored as JSON
