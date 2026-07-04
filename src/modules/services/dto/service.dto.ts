@@ -2,10 +2,15 @@ import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { paginationSchema } from '@/common/dto/pagination';
 
-export const createServiceSchema = z.object({
+const serviceFields = z.object({
   name: z.string().trim().min(1).max(120),
   category: z.string().trim().max(60).default(''),
+  /** 'fixed' → exact `price`. 'range' → `price` (min) .. `priceMax` (max). */
+  priceType: z.enum(['fixed', 'range']).default('fixed'),
+  /** Fixed price, or the lower bound of a range. */
   price: z.number().int().min(0),
+  /** Upper bound; required for range, must be null/absent for fixed. */
+  priceMax: z.number().int().min(0).nullable().optional(),
   duration: z.number().int().min(5).max(600), // minutes
   /** Recurrence interval in TOTAL DAYS (null = no repeat). Max ~5 years. */
   repeatEveryDays: z.number().int().min(1).max(1825).nullable().optional(),
@@ -15,9 +20,30 @@ export const createServiceSchema = z.object({
   capacity: z.number().int().min(1).max(200).default(1),
   active: z.boolean().default(true),
 });
+
+/** Cross-field price rules, applied to both create (full) and update (partial).
+ *  Only enforced when the relevant fields are present so partial updates work. */
+const refinePrice = (v: {
+  priceType?: 'fixed' | 'range';
+  price?: number;
+  priceMax?: number | null;
+}, ctx: z.RefinementCtx) => {
+  if (v.priceType === 'range') {
+    if (v.priceMax == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceMax'], message: 'Range services need an upper price' });
+    } else if (typeof v.price === 'number' && v.priceMax <= v.price) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceMax'], message: 'Upper price must be greater than the lower price' });
+    }
+  }
+  if (v.priceType === 'fixed' && v.priceMax != null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceMax'], message: 'Fixed services can’t have an upper price' });
+  }
+};
+
+export const createServiceSchema = serviceFields.superRefine(refinePrice);
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
-export const updateServiceSchema = createServiceSchema.partial();
+export const updateServiceSchema = serviceFields.partial().superRefine(refinePrice);
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
 
 export const listServiceQuerySchema = paginationSchema.extend({

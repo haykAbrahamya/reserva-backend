@@ -57,6 +57,13 @@ enum PartnerKind {
   single
 }
 
+/// How a service is priced: a single exact amount, or a min–max range whose
+/// exact charge is captured per booking on completion.
+enum ServicePriceType {
+  fixed
+  range
+}
+
 // ── Partner (tenant) ────────────────────────────────────────
 
 model Partner {
@@ -181,8 +188,16 @@ model Service {
   partnerId String
   name      String
   category  String  @default("")
+  /// Whether `price` is an exact amount or the low end of a range. A `range`
+  /// service quotes `price`–`priceMax` publicly, and its exact charge is captured
+  /// per booking on completion (Booking.finalPrice).
+  priceType ServicePriceType @default(fixed)
   /// Stored in the smallest currency unit (AMD has no minor unit → whole drams).
+  /// For a range service this is the LOWER bound (kept as `price` so existing
+  /// reads treat it as a sensible baseline).
   price     Int
+  /// Upper bound for a range service; null for fixed-price services.
+  priceMax  Int?
   /// Duration in minutes.
   duration  Int
   /// How often this service should be repeated, in TOTAL DAYS (e.g. 40 = "1
@@ -378,8 +393,15 @@ model Booking {
   /// reminder/confirmation messages later. Null for older/backoffice bookings.
   locale  String?
 
-  /// Price captured at booking time (service price may change later).
+  /// Price captured at booking time (service price may change later). For a
+  /// range service this is the range's LOWER bound at booking time.
   priceAtBooking Int @default(0)
+  /// Upper bound captured at booking time for a range service; null for fixed.
+  priceMaxAtBooking Int?
+  /// Exact amount charged, entered when a range-priced booking is completed.
+  /// Null for fixed-price bookings (their price is exact) or until captured.
+  /// Revenue uses `finalPrice ?? priceAtBooking`.
+  finalPrice Int?
 
   createdById String?
   createdAt   DateTime @default(now())

@@ -53,5 +53,12 @@ export const updateBookingSchema = z.object({
 });
 export class UpdateBookingDto extends createZodDto(updateBookingSchema) {}
 
-export const updateStatusSchema = z.object({ status: bookingStatus });
+export const updateStatusSchema = z.object({
+  status: bookingStatus,
+  /** Exact amount charged — required when completing a range-priced booking. */
+  finalPrice: z.number().int().min(0).optional(),
+});
 export class UpdateStatusDto extends createZodDto(updateStatusSchema) {}
+
+export const setFinalPriceSchema = z.object({ finalPrice: z.number().int().min(0) });
+export class SetFinalPriceDto extends createZodDto(setFinalPriceSchema) {}

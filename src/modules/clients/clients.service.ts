@@ -71,14 +71,27 @@ export class ClientsService {
       _count: { _all: true },
       _max: { startAt: true },
     });
-    const spendGroups = await this.prisma.booking.groupBy({
-      by: ['clientId'],
-      where: { clientId: { in: ids }, status: 'completed' },
-      _sum: { priceAtBooking: true },
-    });
+    // Effective spend = finalPrice when captured (range services), else the
+    // booked price. Split into two aggregates so the coalesce stays server-side:
+    //   • rows WITH a finalPrice → sum finalPrice
+    //   • rows WITHOUT → sum priceAtBooking
+    const [finalSpend, baseSpend] = await Promise.all([
+      this.prisma.booking.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, status: 'completed', finalPrice: { not: null } },
+        _sum: { finalPrice: true },
+      }),
+      this.prisma.booking.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, status: 'completed', finalPrice: null },
+        _sum: { priceAtBooking: true },
+      }),
+    ]);
 
     const visitsById = new Map(visitGroups.map((g) => [g.clientId, g]));
-    const spendById = new Map(spendGroups.map((g) => [g.clientId, g._sum.priceAtBooking ?? 0]));
+    const spendById = new Map<string, number>();
+    for (const g of finalSpend) spendById.set(g.clientId, g._sum.finalPrice ?? 0);
+    for (const g of baseSpend) spendById.set(g.clientId, (spendById.get(g.clientId) ?? 0) + (g._sum.priceAtBooking ?? 0));
 
     const items = rows.map((c) => ({
       ...c,
@@ -107,7 +120,8 @@ export class ClientsService {
     });
 
     const completed = bookings.filter((b) => b.status === 'completed');
-    const totalSpend = completed.reduce((sum, b) => sum + b.priceAtBooking, 0);
+    // Effective charge: the captured final price (range services) or the booked price.
+    const totalSpend = completed.reduce((sum, b) => sum + (b.finalPrice ?? b.priceAtBooking), 0);
 
     return {
       ...client,

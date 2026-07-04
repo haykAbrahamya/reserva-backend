@@ -51,7 +51,7 @@ export class ServicesService {
 
   async create(partnerId: string, dto: CreateServiceDto) {
     const service = await this.prisma.service.create({
-      data: { id: newId(), partnerId, ...dto },
+      data: { ...(dto as Prisma.ServiceUncheckedCreateInput), id: newId(), partnerId },
     });
 
     // Single-mode partners have no Specialists page, so there's no UI to attach
@@ -90,7 +90,10 @@ export class ServicesService {
 
   async update(partnerId: string, id: string, dto: UpdateServiceDto) {
     await this.get(partnerId, id); // tenant-scoped existence check
-    const service = await this.prisma.service.update({ where: { id }, data: dto });
+    // Switching to a fixed price must clear any previous upper bound so a stale
+    // priceMax can't linger and re-render the service as a range.
+    const data = dto.priceType === 'fixed' ? { ...dto, priceMax: null } : dto;
+    const service = await this.prisma.service.update({ where: { id }, data });
 
     // A service flipped from facility → requires-specialist needs the same
     // auto-link in single mode (upsert makes this idempotent if already linked).

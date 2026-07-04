@@ -25,7 +25,7 @@ interface CreateOpts {
  * the client doesn't need to fetch the catalog to show service/specialist names.
  */
 const BOOKING_INCLUDE = {
-  service: { select: { id: true, name: true, price: true, duration: true, capacity: true } },
+  service: { select: { id: true, name: true, price: true, priceType: true, priceMax: true, duration: true, capacity: true } },
   specialist: { select: { id: true, name: true, title: true } },
   location: { select: { id: true, name: true, address: true } },
 } satisfies Prisma.BookingInclude;
@@ -150,6 +150,7 @@ export class BookingsService {
             notes: dto.notes,
             locale: dto.locale ?? null,
             priceAtBooking: service.price,
+            priceMaxAtBooking: service.priceType === 'range' ? service.priceMax : null,
             createdById: opts.createdById,
           },
           include: BOOKING_INCLUDE,
@@ -207,6 +208,12 @@ export class BookingsService {
           startAt,
           endAt,
           priceAtBooking: service.price,
+          priceMaxAtBooking: service.priceType === 'range' ? service.priceMax : null,
+          // If the service itself changed, the captured final price no longer
+          // applies — clear it so completion re-prompts when needed.
+          ...(dto.serviceId !== undefined && dto.serviceId !== existing.serviceId
+            ? { finalPrice: null }
+            : {}),
           ...(dto.notes !== undefined && { notes: dto.notes }),
         },
         include: BOOKING_INCLUDE,
@@ -224,11 +231,30 @@ export class BookingsService {
     status: BookingStatus,
     scopeLocationId?: string | null,
     actorId?: string,
+    finalPrice?: number | null,
   ) {
-    await this.get(partnerId, id, scopeLocationId);
+    const existing = await this.get(partnerId, id, scopeLocationId);
+
+    // Completing a RANGE-priced booking must capture the exact amount charged, so
+    // revenue is never ambiguous. Fixed-price bookings need nothing extra.
+    const isRange = existing.service.priceType === 'range';
+    let finalPriceUpdate: number | null | undefined;
+    if (status === 'completed' && isRange) {
+      if (finalPrice == null) {
+        throw AppException.badRequest(
+          ErrorCode.VALIDATION_FAILED,
+          'Enter the final price to complete this range-priced booking',
+        );
+      }
+      finalPriceUpdate = finalPrice;
+    }
+
     const booking = await this.prisma.booking.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(finalPriceUpdate !== undefined && { finalPrice: finalPriceUpdate }),
+      },
       include: BOOKING_INCLUDE,
     });
 
@@ -242,6 +268,28 @@ export class BookingsService {
     const event = statusEvent[status as keyof typeof statusEvent];
     if (event) this.notifier.notify(event, booking, actorId);
     return booking;
+  }
+
+  /** Edit the exact charged amount for a (range-priced) booking after the fact —
+   *  e.g. correcting a typo from the completion popup. */
+  async setFinalPrice(
+    partnerId: string,
+    id: string,
+    finalPrice: number,
+    scopeLocationId?: string | null,
+  ) {
+    const existing = await this.get(partnerId, id, scopeLocationId);
+    if (existing.service.priceType !== 'range') {
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_FAILED,
+        'Only range-priced bookings have an editable final price',
+      );
+    }
+    return this.prisma.booking.update({
+      where: { id },
+      data: { finalPrice },
+      include: BOOKING_INCLUDE,
+    });
   }
 
   async remove(partnerId: string, id: string, scopeLocationId?: string | null) {

@@ -10,6 +10,7 @@ import {
   CreateBookingDto,
   UpdateBookingDto,
   UpdateStatusDto,
+  SetFinalPriceDto,
 } from './dto/booking.dto';
 import { RAW_RESPONSE } from '@/common/interceptors/transform.interceptor';
 
@@ -56,7 +57,13 @@ export class BookingsController {
   @Patch(':id/status')
   @ApiOperation({ summary: 'Change booking status (confirm, complete, cancel, no-show)' })
   setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateStatusDto) {
-    return this.bookings.setStatus(user.partnerId, id, dto.status, user.locationId, user.id);
+    return this.bookings.setStatus(user.partnerId, id, dto.status, user.locationId, user.id, dto.finalPrice);
+  }
+
+  @Patch(':id/final-price')
+  @ApiOperation({ summary: 'Set/correct the exact charged price for a range-priced booking' })
+  setFinalPrice(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SetFinalPriceDto) {
+    return this.bookings.setFinalPrice(user.partnerId, id, dto.finalPrice, user.locationId);
   }
 
   @Delete(':id')
