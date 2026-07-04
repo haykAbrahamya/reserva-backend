@@ -117,6 +117,7 @@ export class PlatformPartnersService {
           name: dto.name,
           type: dto.type,
           accent: dto.accent,
+          kind: dto.kind,
           presentation: {
             create: {
               tagline: dto.presentation?.tagline ?? '',
@@ -145,6 +146,33 @@ export class PlatformPartnersService {
           mustChangePassword: !dto.admin.password,
         },
       });
+
+      // Solo partners get one auto-provisioned location + specialist so the
+      // backoffice hides the team UI and bookings auto-assign to the sole pro
+      // (mirrors the self-signup activation path).
+      if (dto.kind === 'single') {
+        const locationId = newId();
+        await tx.location.create({
+          data: {
+            id: locationId,
+            partnerId,
+            name: dto.name,
+            address: '',
+            phone: normalizePhone(dto.admin.phone),
+          },
+        });
+        await tx.specialist.create({
+          data: {
+            id: newId(),
+            partnerId,
+            locationId,
+            name: dto.admin.name,
+            title: dto.type,
+            phone: normalizePhone(dto.admin.phone),
+            schedule: SOLO_DEFAULT_SCHEDULE,
+          },
+        });
+      }
 
       return created;
     });
@@ -358,10 +386,13 @@ export class PlatformPartnersService {
   /** Update a partner user's profile (name/phone/active). Platform support edit. */
   async updateUser(partnerId: string, userId: string, dto: PlatformUpdateUserDto) {
     const user = await this.getUser(partnerId, userId);
+    // Email is globally unique — reject a collision (excluding this same user).
+    if (dto.email !== undefined) await this.assertEmailFree(dto.email, user.id);
     const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.email !== undefined && { email: dto.email.toLowerCase() }),
         ...(dto.phone !== undefined && { phone: normalizePhone(dto.phone) }),
         ...(dto.active !== undefined && { active: dto.active }),
       },
@@ -422,12 +453,12 @@ export class PlatformPartnersService {
     }
   }
 
-  private async assertEmailFree(email: string) {
+  private async assertEmailFree(email: string, exceptUserId?: string) {
     const existing = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
       select: { id: true },
     });
-    if (existing) {
+    if (existing && existing.id !== exceptUserId) {
       throw AppException.conflict(ErrorCode.EMAIL_TAKEN, `The email "${email}" is already in use`);
     }
   }

@@ -52,6 +52,9 @@ export const createPartnerSchema = z.object({
     .regex(/^[a-z0-9-]+$/, 'Slug may contain lowercase letters, numbers and hyphens'),
   type: z.string().trim().min(1).max(80),
   accent: hexColor,
+  /** Salon (team) or single (solo pro). Solo auto-provisions one location +
+   *  specialist. Defaults to salon. */
+  kind: z.enum(['salon', 'single']).default('salon'),
   presentation: presentationSchema.partial().optional(),
   admin: z.object({
     name: z.string().trim().min(1).max(120),

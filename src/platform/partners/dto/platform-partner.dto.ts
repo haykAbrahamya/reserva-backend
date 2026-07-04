@@ -24,6 +24,7 @@ export class SetPartnerKindDto extends createZodDto(setPartnerKindSchema) {}
 // ── Partner users (platform support) ──
 export const platformUpdateUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().email().max(160).optional(),
   phone: z.string().trim().min(4).max(40).optional(),
   active: z.boolean().optional(),
 });

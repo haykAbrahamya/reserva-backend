@@ -671,6 +671,10 @@ model VisitorEvent {
   // Page context sent by the client.
   path       String?
   host       String?
+  /// The partner (salon) slug whose public page was viewed, when the visit was
+  /// on a tenant page (slug.reserva.am or /p/slug). Null for the marketplace /
+  /// apex pages. Lets the console filter views per partner.
+  partnerSlug String?
   referrer   String?
   language   String?
   screenW    Int?
@@ -681,5 +685,6 @@ model VisitorEvent {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+  @@index([partnerSlug, createdAt])
   @@map("visitor_events")
 }
