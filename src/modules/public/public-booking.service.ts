@@ -207,9 +207,15 @@ export class PublicBookingService {
       for (const sp of candidates) {
         const locHours = hoursByLocation.get(sp.locationId) ?? null;
         const spSchedule = sp.schedule as WeekScheduleInput | null;
-        // A specialist "opens" this day when both their schedule (or location,
-        // when they have none) and the location are enabled for that weekday.
-        if (openOnDay(spSchedule, day) && openOnDay(locHours, day)) anyOpenWindow = true;
+        // Mirror computeSlots' window logic exactly: the effective window is the
+        // specialist's own schedule when they have one, else the location hours.
+        // A null personal schedule means "follows location hours" — NOT closed.
+        // (The earlier `spSchedule && location both open` check wrongly marked a
+        //  schedule-less specialist's day as closed, so real open days lost dots.)
+        const effectiveOpen = spSchedule
+          ? openOnDay(spSchedule, day) && openOnDay(locHours, day)
+          : openOnDay(locHours, day);
+        if (effectiveOpen) anyOpenWindow = true;
 
         const timeOff = timeOffAll.filter(
           (o) => o.specialistId === sp.id && o.startAt < dayEnd && o.endAt > day,
