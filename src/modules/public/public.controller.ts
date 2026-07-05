@@ -4,7 +4,11 @@ import { Throttle } from '@nestjs/throttler';
 import { PublicBookingService } from './public-booking.service';
 import { PartnersService } from '@/modules/partners/partners.service';
 import { Public } from '@/auth/decorators';
-import { SlotsQueryDto, PublicCreateBookingDto } from './dto/public-booking.dto';
+import {
+  SlotsQueryDto,
+  AvailabilitySummaryQueryDto,
+  PublicCreateBookingDto,
+} from './dto/public-booking.dto';
 
 /**
  * Unauthenticated, public-facing booking surface for the client app
@@ -29,6 +33,12 @@ export class PublicController {
   @ApiOperation({ summary: 'Available time slots for a service on a date' })
   slots(@Param('slug') slug: string, @Query() q: SlotsQueryDto) {
     return this.publicBooking.slots(slug, q);
+  }
+
+  @Get('availability-summary')
+  @ApiOperation({ summary: 'Per-day availability density for the booking day-strip' })
+  availabilitySummary(@Param('slug') slug: string, @Query() q: AvailabilitySummaryQueryDto) {
+    return this.publicBooking.availabilitySummary(slug, q);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

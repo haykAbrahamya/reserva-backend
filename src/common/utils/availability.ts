@@ -157,6 +157,19 @@ export function computeCapacitySlots(p: CapacitySlotParams): string[] {
   return out;
 }
 
+/**
+ * Map a day's open-slot count to a 0–3 "density" bucket for the booking page's
+ * day-strip dots. Kept here so the client contract (dots) stays stable and the
+ * bucketing lives with the slot logic rather than in a controller.
+ *   0 → none, 1 → 1–2, 2 → 3–5, 3 → 6+
+ */
+export function slotCountToDots(count: number): 0 | 1 | 2 | 3 {
+  if (count <= 0) return 0;
+  if (count <= 2) return 1;
+  if (count <= 5) return 2;
+  return 3;
+}
+
 /** How many bookings overlap a given [start,end) window (for capacity checks). */
 export function countOverlapping(start: Date, end: Date, busy: BusyWindow[]): number {
   const s = start.getTime();

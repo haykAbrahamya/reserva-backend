@@ -11,6 +11,20 @@ export const slotsQuerySchema = z.object({
 });
 export class SlotsQueryDto extends createZodDto(slotsQuerySchema) {}
 
+/**
+ * Query for the day-strip availability summary: how open each of `days` days is,
+ * starting at `from`. Same service/specialist/branch context as {@link slotsQuerySchema}.
+ * `days` is clamped server-side; the strip shows 7.
+ */
+export const availabilitySummaryQuerySchema = z.object({
+  serviceId: z.string().uuid(),
+  specialistId: z.string().uuid().optional(),
+  locationId: z.string().uuid().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  days: z.coerce.number().int().min(1).max(31).optional(),
+});
+export class AvailabilitySummaryQueryDto extends createZodDto(availabilitySummaryQuerySchema) {}
+
 export const publicCreateBookingSchema = z.object({
   serviceId: z.string().uuid(),
   /** Null/omitted → auto-assign any available specialist at the branch. */

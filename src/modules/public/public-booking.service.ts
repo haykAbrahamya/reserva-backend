@@ -4,9 +4,28 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { BookingsService } from '@/modules/bookings/bookings.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
-import { computeSlots, computeCapacitySlots } from '@/common/utils/availability';
+import {
+  computeSlots,
+  computeCapacitySlots,
+  slotCountToDots,
+  openWindowForDate,
+} from '@/common/utils/availability';
 import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
-import type { SlotsQueryDto, PublicCreateBookingDto } from './dto/public-booking.dto';
+import type {
+  SlotsQueryDto,
+  AvailabilitySummaryQueryDto,
+  PublicCreateBookingDto,
+} from './dto/public-booking.dto';
+
+/** One day's availability signal for the booking page day-strip. */
+export interface PublicDayAvailability {
+  /** yyyy-mm-dd (local salon day). */
+  date: string;
+  /** The venue/specialists are all closed this day. */
+  closed: boolean;
+  /** Slot-density bucket 0–3 → dots under the day chip. */
+  openDots: 0 | 1 | 2 | 3;
+}
 
 @Injectable()
 export class PublicBookingService {
@@ -80,6 +99,146 @@ export class PublicBookingService {
     }
 
     return [...all].sort();
+  }
+
+  /**
+   * Per-day availability for the booking page day-strip over an N-day window.
+   * Mirrors {@link slots} (same open-window − time-off − bookings − past logic
+   * via the shared engine) but for a range, and returns a compact density bucket
+   * per day instead of full slot lists.
+   *
+   * Batched: bookings and time-off for the whole window are fetched in one query
+   * each (grouped in memory), so cost is O(1) round-trips, not O(days).
+   */
+  async availabilitySummary(
+    slug: string,
+    q: AvailabilitySummaryQueryDto,
+  ): Promise<PublicDayAvailability[]> {
+    const partner = await this.resolvePartner(slug);
+    const service = await this.prisma.service.findFirst({
+      where: { id: q.serviceId, partnerId: partner.id, deletedAt: null, active: true },
+    });
+    if (!service) throw AppException.notFound('Service not found');
+
+    const dayCount = q.days ?? 7;
+    const days = buildDayRange(q.from, dayCount); // local-midnight Date per day
+    const windowStart = days[0];
+    const windowEnd = new Date(days[days.length - 1]);
+    windowEnd.setHours(23, 59, 59, 999);
+    const now = new Date();
+
+    // ── Facility / entry service (spa): location hours + capacity, no specialist.
+    if (!service.requiresSpecialist) {
+      const location = await this.resolveFacilityLocation(partner.id, q.locationId);
+      if (!location) return days.map((d) => ({ date: fmtLocalDay(d), closed: true, openDots: 0 as const }));
+
+      // One query for the whole window; filter per day in memory.
+      const busyAll = await this.prisma.booking.findMany({
+        where: {
+          locationId: location.id,
+          serviceId: service.id,
+          status: { in: ['pending', 'confirmed', 'completed'] },
+          startAt: { lt: windowEnd },
+          endAt: { gt: windowStart },
+        },
+        select: { startAt: true, endAt: true },
+      });
+
+      const hours = (location.hours ?? null) as WeekScheduleInput | null;
+      return days.map((day) => {
+        const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+        const busy = busyAll.filter((b) => b.startAt < dayEnd && b.endAt > day);
+        const slots = computeCapacitySlots({
+          day,
+          durationMin: service.duration,
+          locationHours: hours,
+          busy,
+          capacity: service.capacity,
+          notBefore: isToday(day) ? now : undefined,
+        });
+        return { date: fmtLocalDay(day), closed: !openOnDay(hours, day), openDots: slotCountToDots(slots.length) };
+      });
+    }
+
+    // ── Specialist service: union of eligible specialists' availability. ──
+    const candidates = await this.eligibleSpecialists(
+      partner.id,
+      q.serviceId,
+      q.specialistId,
+      q.locationId,
+    );
+    if (candidates.length === 0) {
+      return days.map((d) => ({ date: fmtLocalDay(d), closed: false, openDots: 0 as const }));
+    }
+
+    const specialistIds = candidates.map((c) => c.id);
+    const locationIds = [...new Set(candidates.map((c) => c.locationId))];
+
+    // Fetch locations' hours, and ALL time-off + bookings across the window, in
+    // batched queries — then group in memory. No per-day / per-specialist trips.
+    const [locations, timeOffAll, busyAll] = await Promise.all([
+      this.prisma.location.findMany({
+        where: { id: { in: locationIds }, deletedAt: null },
+        select: { id: true, hours: true },
+      }),
+      this.prisma.specialistTimeOff.findMany({
+        where: { specialistId: { in: specialistIds }, startAt: { lt: windowEnd }, endAt: { gt: windowStart } },
+        select: { specialistId: true, startAt: true, endAt: true },
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          specialistId: { in: specialistIds },
+          status: { in: ['pending', 'confirmed', 'completed'] },
+          startAt: { lt: windowEnd },
+          endAt: { gt: windowStart },
+        },
+        select: { specialistId: true, startAt: true, endAt: true },
+      }),
+    ]);
+
+    const hoursByLocation = new Map(locations.map((l) => [l.id, (l.hours ?? null) as WeekScheduleInput | null]));
+
+    return days.map((day) => {
+      const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+      const notBefore = isToday(day) ? now : undefined;
+      const daySlots = new Set<string>();
+      let anyOpenWindow = false;
+
+      for (const sp of candidates) {
+        const locHours = hoursByLocation.get(sp.locationId) ?? null;
+        const spSchedule = sp.schedule as WeekScheduleInput | null;
+        // A specialist "opens" this day when both their schedule (or location,
+        // when they have none) and the location are enabled for that weekday.
+        if (openOnDay(spSchedule, day) && openOnDay(locHours, day)) anyOpenWindow = true;
+
+        const timeOff = timeOffAll.filter(
+          (o) => o.specialistId === sp.id && o.startAt < dayEnd && o.endAt > day,
+        );
+        const busy = busyAll.filter(
+          (b) => b.specialistId === sp.id && b.startAt < dayEnd && b.endAt > day,
+        );
+
+        for (const slot of computeSlots({
+          day,
+          durationMin: service.duration,
+          specialistSchedule: spSchedule,
+          locationHours: locHours,
+          timeOff,
+          busy,
+          notBefore,
+        })) {
+          daySlots.add(slot);
+        }
+      }
+
+      return {
+        date: fmtLocalDay(day),
+        // Closed only when no specialist's window is open that weekday at all
+        // (vs. open-but-fully-booked, which is openDots 0 with closed false).
+        closed: !anyOpenWindow,
+        openDots: slotCountToDots(daySlots.size),
+      };
+    });
   }
 
   /** Create a booking from the public page (auto-assigns a specialist if none). */
@@ -272,4 +431,23 @@ function isToday(day: Date): boolean {
     day.getMonth() === now.getMonth() &&
     day.getDate() === now.getDate()
   );
+}
+
+/** `count` consecutive local-midnight days starting at the yyyy-mm-dd `from`. */
+function buildDayRange(from: string, count: number): Date[] {
+  const [y, m, d] = from.split('-').map(Number);
+  return Array.from({ length: count }, (_, i) => new Date(y, m - 1, d + i));
+}
+
+/** yyyy-mm-dd for a local Date (timezone-safe, avoids toISOString UTC shift). */
+function fmtLocalDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Whether a weekly schedule has an enabled window on the given day. */
+function openOnDay(schedule: WeekScheduleInput | null | undefined, day: Date): boolean {
+  return openWindowForDate(schedule, day) != null;
 }
