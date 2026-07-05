@@ -61,8 +61,25 @@ export class PublicBookingService {
     );
     if (candidates.length === 0) return [];
 
-    // Per specialist: open window − their time-off − their bookings. Union the
-    // resulting slot sets so "any specialist" shows every offerable time.
+    const slots = await this.specialistDaySlots(candidates, service.duration, day, dayEnd, notBefore);
+    return [...slots].sort();
+  }
+
+  /**
+   * Union of bookable 'HH:MM' start times for a service on a single day across a
+   * set of eligible specialists. The SINGLE source of truth used by both the
+   * live slots endpoint and the day-strip summary, so the two can never disagree
+   * (a summary that reported "no slots" for a day that actually had them was the
+   * result of these paths drifting). Queries the per-specialist location hours,
+   * time-off and bookings, then layers them via the shared `computeSlots` engine.
+   */
+  private async specialistDaySlots(
+    candidates: { id: string; locationId: string; schedule: unknown }[],
+    durationMin: number,
+    day: Date,
+    dayEnd: Date,
+    notBefore: Date | undefined,
+  ): Promise<Set<string>> {
     const all = new Set<string>();
     for (const sp of candidates) {
       const location = await this.prisma.location.findFirst({
@@ -87,7 +104,7 @@ export class PublicBookingService {
 
       for (const slot of computeSlots({
         day,
-        durationMin: service.duration,
+        durationMin,
         specialistSchedule: sp.schedule as WeekScheduleInput | null,
         locationHours: (location?.hours ?? null) as WeekScheduleInput | null,
         timeOff,
@@ -97,8 +114,7 @@ export class PublicBookingService {
         all.add(slot);
       }
     }
-
-    return [...all].sort();
+    return all;
   }
 
   /**
@@ -171,80 +187,46 @@ export class PublicBookingService {
       return days.map((d) => ({ date: fmtLocalDay(d), closed: false, openDots: 0 as const }));
     }
 
-    const specialistIds = candidates.map((c) => c.id);
+    // Location hours per specialist, to decide "closed" (weekday not worked)
+    // vs. "open but fully booked" (0 slots). Fetched once for the whole window.
     const locationIds = [...new Set(candidates.map((c) => c.locationId))];
-
-    // Fetch locations' hours, and ALL time-off + bookings across the window, in
-    // batched queries — then group in memory. No per-day / per-specialist trips.
-    const [locations, timeOffAll, busyAll] = await Promise.all([
-      this.prisma.location.findMany({
-        where: { id: { in: locationIds }, deletedAt: null },
-        select: { id: true, hours: true },
-      }),
-      this.prisma.specialistTimeOff.findMany({
-        where: { specialistId: { in: specialistIds }, startAt: { lt: windowEnd }, endAt: { gt: windowStart } },
-        select: { specialistId: true, startAt: true, endAt: true },
-      }),
-      this.prisma.booking.findMany({
-        where: {
-          specialistId: { in: specialistIds },
-          status: { in: ['pending', 'confirmed', 'completed'] },
-          startAt: { lt: windowEnd },
-          endAt: { gt: windowStart },
-        },
-        select: { specialistId: true, startAt: true, endAt: true },
-      }),
-    ]);
-
-    const hoursByLocation = new Map(locations.map((l) => [l.id, (l.hours ?? null) as WeekScheduleInput | null]));
-
-    return days.map((day) => {
-      const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
-      const notBefore = isToday(day) ? now : undefined;
-      const daySlots = new Set<string>();
-      let anyOpenWindow = false;
-
-      for (const sp of candidates) {
-        const locHours = hoursByLocation.get(sp.locationId) ?? null;
-        const spSchedule = sp.schedule as WeekScheduleInput | null;
-        // Mirror computeSlots' window logic exactly: the effective window is the
-        // specialist's own schedule when they have one, else the location hours.
-        // A null personal schedule means "follows location hours" — NOT closed.
-        // (The earlier `spSchedule && location both open` check wrongly marked a
-        //  schedule-less specialist's day as closed, so real open days lost dots.)
-        const effectiveOpen = spSchedule
-          ? openOnDay(spSchedule, day) && openOnDay(locHours, day)
-          : openOnDay(locHours, day);
-        if (effectiveOpen) anyOpenWindow = true;
-
-        const timeOff = timeOffAll.filter(
-          (o) => o.specialistId === sp.id && o.startAt < dayEnd && o.endAt > day,
-        );
-        const busy = busyAll.filter(
-          (b) => b.specialistId === sp.id && b.startAt < dayEnd && b.endAt > day,
-        );
-
-        for (const slot of computeSlots({
-          day,
-          durationMin: service.duration,
-          specialistSchedule: spSchedule,
-          locationHours: locHours,
-          timeOff,
-          busy,
-          notBefore,
-        })) {
-          daySlots.add(slot);
-        }
-      }
-
-      return {
-        date: fmtLocalDay(day),
-        // Closed only when no specialist's window is open that weekday at all
-        // (vs. open-but-fully-booked, which is openDots 0 with closed false).
-        closed: !anyOpenWindow,
-        openDots: slotCountToDots(daySlots.size),
-      };
+    const locations = await this.prisma.location.findMany({
+      where: { id: { in: locationIds }, deletedAt: null },
+      select: { id: true, hours: true },
     });
+    const hoursByLocation = new Map(
+      locations.map((l) => [l.id, (l.hours ?? null) as WeekScheduleInput | null]),
+    );
+
+    // Compute each day through the SAME per-day slot function the live slots
+    // endpoint uses — so a day's dots can never disagree with its actual slots.
+    const perDay = await Promise.all(
+      days.map(async (day) => {
+        const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+        const notBefore = isToday(day) ? now : undefined;
+
+        // A day is "open" when at least one specialist's effective window is
+        // enabled that weekday: their own schedule if they have one, else the
+        // location's hours (a null personal schedule = follows location hours).
+        const anyOpenWindow = candidates.some((sp) => {
+          const locHours = hoursByLocation.get(sp.locationId) ?? null;
+          const spSchedule = sp.schedule as WeekScheduleInput | null;
+          return spSchedule
+            ? openOnDay(spSchedule, day) && openOnDay(locHours, day)
+            : openOnDay(locHours, day);
+        });
+
+        const slots = await this.specialistDaySlots(candidates, service.duration, day, dayEnd, notBefore);
+        return {
+          date: fmtLocalDay(day),
+          // Closed only when no specialist works this weekday at all (vs.
+          // open-but-fully-booked → closed:false, openDots:0).
+          closed: !anyOpenWindow,
+          openDots: slotCountToDots(slots.size),
+        };
+      }),
+    );
+    return perDay;
   }
 
   /** Create a booking from the public page (auto-assigns a specialist if none). */
