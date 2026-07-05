@@ -74,6 +74,8 @@ export const updatePartnerSchema = z.object({
   autoConfirmBookings: z.boolean().optional(),
   bookingsEnabled: z.boolean().optional(),
   kind: z.enum(['salon', 'single']).optional(),
+  /** Public booking-page layout. Presentation-only. */
+  template: z.enum(['classic', 'tabbed']).optional(),
   /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
   slug: z
     .string()

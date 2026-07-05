@@ -57,6 +57,15 @@ enum PartnerKind {
   single
 }
 
+/// Which public booking-page layout a partner renders. Presentation-only: the
+/// booking API + flow are identical across templates; only the arrangement and
+/// chrome differ. `classic` is the original single-scroll page (the default all
+/// partners get); `tabbed` groups content under a sticky tab bar.
+enum PartnerTemplate {
+  classic
+  tabbed
+}
+
 /// How a service is priced: a single exact amount, or a min–max range whose
 /// exact charge is captured per booking on completion.
 enum ServicePriceType {
@@ -79,6 +88,10 @@ model Partner {
 
   /// salon (default) or single (solo professional). Presentation-only flag.
   kind PartnerKind @default(salon)
+
+  /// Public booking-page layout. Presentation-only (API/flow unchanged across
+  /// templates). Defaults to the original `classic` page for every partner.
+  template PartnerTemplate @default(classic)
 
   // Branding
   accent String // primary brand color (hex)
