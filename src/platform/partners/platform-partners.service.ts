@@ -195,6 +195,7 @@ export class PlatformPartnersService {
           ...(rest.bookingsEnabled !== undefined && { bookingsEnabled: rest.bookingsEnabled }),
           ...(rest.kind !== undefined && { kind: rest.kind }),
           ...(rest.template !== undefined && { template: rest.template }),
+          ...(rest.supportWidget !== undefined && { supportWidget: rest.supportWidget }),
         },
       });
 

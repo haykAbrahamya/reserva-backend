@@ -16,6 +16,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { initSentry } from './common/monitoring/sentry';
+import { buildOriginChecker } from './common/utils/cors-origin';
 import type { Env } from './config/env.config';
 
 async function bootstrap() {
@@ -58,22 +59,16 @@ async function bootstrap() {
   // (antheris.reserva.am, …) is permitted without listing each slug.
   const allowedOrigins = config.get<Env['CORS_ORIGINS']>('CORS_ORIGINS') ?? [];
   const baseDomain = config.get<string>('CORS_BASE_DOMAIN') ?? '';
-  const baseDomainRe = baseDomain
-    ? new RegExp(`^https://([a-z0-9-]+\\.)*${baseDomain.replace(/\./g, '\\.')}$`, 'i')
-    : null;
+  const isAllowedOrigin = buildOriginChecker(allowedOrigins, baseDomain);
 
   app.enableCors({
     origin: (
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      // Non-browser clients (curl, server-to-server) send no Origin — allow.
-      if (!origin) return callback(null, true);
-      const ok =
-        allowedOrigins.includes(origin) || (baseDomainRe?.test(origin) ?? false);
       // Disallowed: resolve without the CORS headers (browser blocks it) rather
       // than throwing — throwing turns the OPTIONS preflight into a 500.
-      return callback(null, ok);
+      return callback(null, isAllowedOrigin(origin));
     },
     credentials: true,
   });

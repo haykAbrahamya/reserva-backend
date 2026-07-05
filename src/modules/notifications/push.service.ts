@@ -154,4 +154,62 @@ export class PushService implements OnModuleInit {
       await this.prisma.clientPushSubscription.deleteMany({ where: { endpoint: { in: dead } } });
     }
   }
+
+  // ── Platform staff push (internal-backoffice) ──
+  // Mirrors the tenant-staff path above but against PlatformPushSubscription, so
+  // platform and tenant push never cross over. Used for support-chat alerts.
+
+  /** Upsert a device subscription for a platform staff user (idempotent). */
+  async subscribePlatform(userId: string, sub: PushSubscriptionInput, userAgent = '') {
+    await this.prisma.platformPushSubscription.upsert({
+      where: { endpoint: sub.endpoint },
+      create: {
+        id: newId(),
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        userAgent,
+      },
+      update: { userId, p256dh: sub.keys.p256dh, auth: sub.keys.auth, userAgent },
+    });
+  }
+
+  /** Remove a platform subscription by endpoint (device unsubscribed). */
+  async unsubscribePlatform(endpoint: string) {
+    await this.prisma.platformPushSubscription.deleteMany({ where: { endpoint } });
+  }
+
+  /** Push to specific platform users, or to ALL staff when `userIds` is omitted
+   *  (support alerts fan out to every operator). Best-effort; prunes dead subs. */
+  async notifyPlatform(payload: PushPayload, userIds?: string[]): Promise<void> {
+    if (!this.enabled) return;
+
+    const subs = await this.prisma.platformPushSubscription.findMany({
+      where: userIds && userIds.length ? { userId: { in: userIds } } : {},
+    });
+    if (subs.length === 0) return;
+
+    const body = JSON.stringify(payload);
+    const dead: string[] = [];
+
+    await Promise.all(
+      subs.map(async (s) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            body,
+          );
+        } catch (err) {
+          const status = (err as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) dead.push(s.endpoint);
+          else this.logger.warn(`Platform push failed (${status ?? 'err'}) for ${s.id}`);
+        }
+      }),
+    );
+
+    if (dead.length) {
+      await this.prisma.platformPushSubscription.deleteMany({ where: { endpoint: { in: dead } } });
+    }
+  }
 }

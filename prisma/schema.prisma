@@ -66,6 +66,15 @@ enum PartnerTemplate {
   tabbed
 }
 
+/// What the floating action button (web bubble + mobile FAB) does in the
+/// partner's backoffice. `support` = open the support chat (default), `book` =
+/// open the new-booking flow, `hidden` = no FAB at all.
+enum SupportWidgetMode {
+  support
+  book
+  hidden
+}
+
 /// How a service is priced: a single exact amount, or a min–max range whose
 /// exact charge is captured per booking on completion.
 enum ServicePriceType {
@@ -92,6 +101,10 @@ model Partner {
   /// Public booking-page layout. Presentation-only (API/flow unchanged across
   /// templates). Defaults to the original `classic` page for every partner.
   template PartnerTemplate @default(classic)
+
+  /// Backoffice floating action button behavior (support chat / new booking /
+  /// hidden). Set by the partner; overridable by platform staff. Default support.
+  supportWidget SupportWidgetMode @default(support)
 
   // Branding
   accent String // primary brand color (hex)
@@ -123,6 +136,7 @@ model Partner {
   bookings     Booking[]
   clients      Client[]
   users        User[]
+  supportThread SupportThread?
 
   @@index([active])
   // Marketplace listing query: active, listed salons.
@@ -586,7 +600,8 @@ model PlatformUser {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  refreshTokens PlatformRefreshToken[]
+  refreshTokens     PlatformRefreshToken[]
+  pushSubscriptions PlatformPushSubscription[]
 
   @@index([active])
   @@map("platform_users")
@@ -700,4 +715,86 @@ model VisitorEvent {
   @@index([createdAt])
   @@index([partnerSlug, createdAt])
   @@map("visitor_events")
+}
+
+// ── Support chat (partner ⇄ platform) ─────────────────────────
+// A lightweight in-app support conversation between a partner's staff and the
+// Reserva platform team. One thread per partner; messages are exchanged live
+// over the SupportGateway (WebSocket) and persisted here for history + unread
+// badges. Presentation-only relative to the rest of the domain — no booking or
+// tenant logic depends on it.
+
+enum SupportThreadStatus {
+  open
+  closed
+}
+
+/// Who wrote a support message.
+enum SupportSender {
+  partner // a partner's staff user
+  platform // Reserva platform staff
+}
+
+/// One support conversation, scoped to a single partner (1:1). Unread counters
+/// are denormalized so badge queries are a single-row read (no COUNT scans).
+model SupportThread {
+  id        String              @id
+  partnerId String              @unique
+  status    SupportThreadStatus @default(open)
+
+  /// Timestamp of the most recent message — drives thread-list ordering.
+  lastMessageAt DateTime @default(now())
+  /// Unread counts per side, bumped on send and reset on read.
+  partnerUnread  Int @default(0)
+  platformUnread Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partner  Partner          @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  messages SupportMessage[]
+
+  // Thread list: open threads with platform-unread first, newest activity first.
+  @@index([status, lastMessageAt])
+  @@map("support_threads")
+}
+
+/// A single message in a support thread. `senderUserId` is the tenant User id
+/// (partner side) or PlatformUser id (platform side) for display/audit; it is
+/// intentionally NOT a FK so a deleted staff account never cascades away chat
+/// history.
+model SupportMessage {
+  id           String        @id
+  threadId     String
+  senderType   SupportSender
+  senderUserId String?
+  /// Display name captured at send time (survives user rename/removal).
+  senderName   String        @default("")
+  body         String
+  readAt       DateTime?
+  createdAt    DateTime      @default(now())
+
+  thread SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("support_messages")
+}
+
+/// Web Push subscription for a PLATFORM staff user (internal-backoffice). Mirrors
+/// PushSubscription (which is tenant-User-only) but keyed to a PlatformUser, so
+/// platform and tenant push never cross over. Used to notify staff of new
+/// partner support messages when the console isn't focused.
+model PlatformPushSubscription {
+  id        String   @id
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  user PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("platform_push_subscriptions")
 }

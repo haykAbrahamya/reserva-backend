@@ -76,6 +76,8 @@ export const updatePartnerSchema = z.object({
   kind: z.enum(['salon', 'single']).optional(),
   /** Public booking-page layout. Presentation-only. */
   template: z.enum(['classic', 'tabbed']).optional(),
+  /** Backoffice FAB behavior: support chat / new booking / hidden. */
+  supportWidget: z.enum(['support', 'book', 'hidden']).optional(),
   /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
   slug: z
     .string()
