@@ -19,6 +19,16 @@ export interface ReviewAggregate {
   reviewCount: number;
 }
 
+/** One page of public reviews + the cursor to fetch the next page (null at end). */
+export interface PublicReviewPage {
+  items: PublicReview[];
+  /** Pass back as `cursor` to fetch the next page; null when there are no more. */
+  nextCursor: string | null;
+}
+
+/** Max page size a caller may request for the public review list. */
+const MAX_REVIEW_PAGE = 50;
+
 @Injectable()
 export class SpecialistReviewsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -46,14 +56,27 @@ export class SpecialistReviewsService {
     return review;
   }
 
-  /** Latest reviews for a specialist (public booking page). */
-  listPublic(specialistId: string, take = 20): Promise<PublicReview[]> {
-    return this.prisma.specialistReview.findMany({
+  /**
+   * A page of a specialist's reviews for the public booking page, newest first.
+   * Cursor-based: pass the previous page's `nextCursor` (a review id) to continue.
+   * Ordered by createdAt then id so the tiebreak is stable across pages even when
+   * two reviews share a timestamp. Fetches one extra row to detect a next page.
+   */
+  async listPublic(
+    specialistId: string,
+    opts: { cursor?: string; take?: number } = {},
+  ): Promise<PublicReviewPage> {
+    const take = Math.min(Math.max(opts.take ?? 10, 1), MAX_REVIEW_PAGE);
+    const rows = await this.prisma.specialistReview.findMany({
       where: { specialistId },
-      orderBy: { createdAt: 'desc' },
-      take,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1, // one extra row → tells us whether another page exists
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
       select: { id: true, author: true, rating: true, text: true, createdAt: true },
     });
+    const items = rows.slice(0, take);
+    const nextCursor = rows.length > take ? items[items.length - 1].id : null;
+    return { items, nextCursor };
   }
 
   /** Backoffice: list a specialist's reviews (tenant-scoped). */

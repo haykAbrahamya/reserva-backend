@@ -1,9 +1,12 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { SpecialistReviewsService } from './specialist-reviews.service';
 import { Public } from '@/auth/decorators';
-import { CreateSpecialistReviewDto } from './dto/specialist-review.dto';
+import {
+  CreateSpecialistReviewDto,
+  ListSpecialistReviewsDto,
+} from './dto/specialist-review.dto';
 
 /**
  * Public review surface for the booking page. Anyone can read a specialist's
@@ -16,9 +19,12 @@ export class PublicSpecialistReviewsController {
   constructor(private readonly reviews: SpecialistReviewsService) {}
 
   @Get()
-  @ApiOperation({ summary: "A specialist's public reviews" })
-  list(@Param('specialistId') specialistId: string) {
-    return this.reviews.listPublic(specialistId);
+  @ApiOperation({ summary: "A specialist's public reviews (paginated, newest first)" })
+  list(
+    @Param('specialistId') specialistId: string,
+    @Query() query: ListSpecialistReviewsDto,
+  ) {
+    return this.reviews.listPublic(specialistId, { cursor: query.cursor, take: query.take });
   }
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
