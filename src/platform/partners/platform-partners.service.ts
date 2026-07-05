@@ -65,6 +65,14 @@ export class PlatformPartnersService {
           users: { where: { deletedAt: null } },
         },
       },
+      // Most-recent backoffice activity across the partner's users. One row is
+      // enough (ordered desc), so this stays cheap even across many partners.
+      users: {
+        where: { deletedAt: null, lastSeenAt: { not: null } },
+        select: { lastSeenAt: true },
+        orderBy: { lastSeenAt: 'desc' },
+        take: 1,
+      },
     } satisfies Prisma.PartnerInclude;
     const orderBy: Prisma.PartnerOrderByWithRelationInput = { createdAt: 'desc' };
 
@@ -72,7 +80,7 @@ export class PlatformPartnersService {
       this.prisma.partner.findMany({ where, include, orderBy, ...pageArgs(q.page, q.pageSize) }),
       this.prisma.partner.count({ where }),
     ]);
-    return paginate(rows.map(serialize), total, q.page, q.pageSize);
+    return paginate(rows.map(serializeListItem), total, q.page, q.pageSize);
   }
 
   async get(id: string) {
@@ -91,7 +99,7 @@ export class PlatformPartnersService {
         },
         users: {
           where: { deletedAt: null, role: 'admin' },
-          select: { id: true, name: true, email: true, phone: true, lastLogin: true, active: true },
+          select: { id: true, name: true, email: true, phone: true, lastLogin: true, lastSeenAt: true, active: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -485,6 +493,23 @@ function serialize<T extends PartnerWithCount>(partner: T) {
   };
 }
 
+type PartnerListRow = PartnerWithCount & {
+  users?: { lastSeenAt: Date | null }[];
+};
+
+/**
+ * List-item shape: counts + the most-recent backoffice activity across the
+ * partner's users (from the single most-recent `users` row we included). The
+ * transient `users` array is dropped so it never reaches the client.
+ */
+function serializeListItem<T extends PartnerListRow>(partner: T) {
+  const { users, ...rest } = partner;
+  return {
+    ...serialize(rest),
+    lastSeenAt: users?.[0]?.lastSeenAt ?? null,
+  };
+}
+
 type UserWithLocation = {
   location?: { id: string; name: string } | null;
 } & Record<string, unknown>;
@@ -500,6 +525,7 @@ function serializeUser(u: UserWithLocation) {
     active: u.active as boolean,
     mustChangePassword: u.mustChangePassword as boolean,
     lastLogin: u.lastLogin as Date | null,
+    lastSeenAt: u.lastSeenAt as Date | null,
     createdAt: u.createdAt as Date,
     location: u.location ? { id: u.location.id, name: u.location.name } : null,
   };
