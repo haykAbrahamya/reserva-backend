@@ -45,6 +45,9 @@ export class PartnersController {
   @Get('partner')
   @ApiOperation({ summary: 'Get the current partner with its full catalog' })
   getOwn(@CurrentUser() user: AuthUser) {
+    // Fire-and-forget "last active" heartbeat — this endpoint is fetched on
+    // every backoffice load/refresh. Never block or fail the profile fetch.
+    void this.partners.touchLastSeen(user.id).catch(() => undefined);
     return this.partners.getOwn(user.partnerId);
   }
 

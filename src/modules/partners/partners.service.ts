@@ -36,6 +36,28 @@ export class PartnersService {
     return { ...rest, locationCount: _count.locations };
   }
 
+  /**
+   * Heartbeat: bump the user's `lastSeenAt`. Called from GET /partner, which the
+   * backoffice fetches on every app load/refresh, so it reflects real usage
+   * (not just credential logins). Throttled to ≥60s so rapid refreshes don't
+   * hammer the DB. Callers invoke this fire-and-forget so it never adds latency
+   * to — or fails — the profile fetch.
+   */
+  async touchLastSeen(userId: string): Promise<void> {
+    const now = Date.now();
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { lastSeenAt: true },
+    });
+    if (!user) return;
+    const stale = !user.lastSeenAt || now - user.lastSeenAt.getTime() > 60_000;
+    if (!stale) return;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: new Date(now) },
+    });
+  }
+
   /** Public booking page — read-only, active partners only, by slug. */
   async getPublicBySlug(slug: string) {
     const partner = await this.prisma.partner.findFirst({

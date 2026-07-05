@@ -104,16 +104,6 @@ export class AuthService {
   async me(userId: string): Promise<PublicUser> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw AppException.notFound('User not found');
-    // Heartbeat: /auth/me fires on every backoffice load/refresh, so it's the
-    // natural "last active" signal. Throttle to ≥60s so rapid refreshes don't
-    // hammer the DB, and never block the response on the write.
-    const now = Date.now();
-    const stale = !user.lastSeenAt || now - user.lastSeenAt.getTime() > 60_000;
-    if (stale) {
-      this.prisma.user
-        .update({ where: { id: user.id }, data: { lastSeenAt: new Date(now) } })
-        .catch(() => undefined);
-    }
     return toPublicUser(user);
   }
 
