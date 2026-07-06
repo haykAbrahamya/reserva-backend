@@ -13,6 +13,7 @@ import { PlatformPendingRegistrationsController } from './pending-registrations/
 import { PlatformPendingRegistrationsService } from './pending-registrations/platform-pending-registrations.service';
 import { PlatformAnalyticsController } from './analytics/platform-analytics.controller';
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
+import { SignupModule } from '@/modules/signup/signup.module';
 import { PlatformAuthGuard } from './guards/platform-auth.guard';
 import { PlatformRolesGuard } from './guards/platform-roles.guard';
 
@@ -23,7 +24,7 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
  * PlatformAuthGuard, which verifies a distinct 'platform-access' token type.
  */
 @Module({
-  imports: [DemoRequestsModule, AnalyticsModule],
+  imports: [DemoRequestsModule, AnalyticsModule, SignupModule],
   controllers: [
     PlatformAuthController,
     PlatformPartnersController,

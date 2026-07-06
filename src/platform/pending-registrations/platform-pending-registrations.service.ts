@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MailService } from '@/mail/mail.service';
+import { SignupService } from '@/modules/signup/signup.service';
 import { AppException } from '@/common/errors/app.exception';
 import { paginate, pageArgs } from '@/common/dto/pagination';
 import type { ListPendingRegistrationsQueryDto } from './dto/pending-registration.dto';
@@ -21,6 +22,7 @@ export class PlatformPendingRegistrationsService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly signup: SignupService,
   ) {}
 
   /** Paginated list. Default shows still-actionable pending signups (not yet
@@ -104,6 +106,16 @@ export class PlatformPendingRegistrationsService {
       link,
     });
     return { email: pending.adminEmail };
+  }
+
+  /**
+   * Manually activate a pending signup: provision the partner + admin now,
+   * without waiting for the email link to be clicked. Delegates to the shared
+   * signup provisioning so behavior (incl. solo auto-provisioning + uniqueness
+   * checks) stays identical to the self-serve path.
+   */
+  async activate(id: string) {
+    return this.signup.activateById(id);
   }
 
   /** Remove a pending registration (e.g. abandoned/duplicate). */

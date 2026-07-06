@@ -148,7 +148,7 @@ export class PartnersService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await tx.partner.update({
         where: { id: partnerId },
         data: {
@@ -203,9 +203,12 @@ export class PartnersService {
           },
         });
       }
-
-      return this.getOwn(partnerId);
     });
+
+    // Read AFTER the transaction commits — getOwn() uses the top-level client,
+    // so calling it inside the tx would read the pre-commit row and return a
+    // stale slug/settings (the source of "slug doesn't update until refresh").
+    return this.getOwn(partnerId);
   }
 
   private async assertExists(partnerId: string) {

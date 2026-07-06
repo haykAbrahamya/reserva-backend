@@ -9,5 +9,7 @@ import { SignupController } from './signup.controller';
 @Module({
   controllers: [SignupController],
   providers: [SignupService],
+  // Exported so the platform module can manually activate a pending signup.
+  exports: [SignupService],
 })
 export class SignupModule {}

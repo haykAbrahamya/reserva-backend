@@ -33,6 +33,12 @@ export class PlatformPendingRegistrationsController {
     return this.service.resend(id);
   }
 
+  @Post(':id/activate')
+  @ApiOperation({ summary: 'Manually activate a pending signup (provision now, no email link needed)' })
+  activate(@Param('id') id: string) {
+    return this.service.activate(id);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a pending registration' })

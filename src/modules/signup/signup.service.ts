@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHash } from 'crypto';
+import type { PendingRegistration, User } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
 import { AuthService, type AuthResult } from '@/auth/auth.service';
@@ -105,6 +106,37 @@ export class SignupService {
       );
     }
 
+    const adminUser = await this.provisionFromPending(pending);
+    // Auto-login: issue a session for the freshly created admin.
+    return this.auth.loginTrustedUser(adminUser);
+  }
+
+  /**
+   * Manually activate a pending signup by id — used by platform staff from the
+   * internal console to provision an account without the partner clicking the
+   * email link (e.g. they never received it). Unlike {@link activate}, this does
+   * NOT require the raw token, does NOT auto-login (the operator isn't the
+   * partner), and ignores expiry (staff can activate a lapsed signup). Returns
+   * the created partner id + admin email.
+   */
+  async activateById(pendingId: string): Promise<{ partnerId: string; adminEmail: string }> {
+    const pending = await this.prisma.pendingRegistration.findUnique({ where: { id: pendingId } });
+    if (!pending || pending.consumedAt) {
+      throw AppException.notFound('Pending registration not found');
+    }
+    const adminUser = await this.provisionFromPending(pending);
+    return { partnerId: adminUser.partnerId, adminEmail: adminUser.email };
+  }
+
+  /**
+   * Shared provisioning: create the Partner + first admin User atomically (and,
+   * for `single` partners, the auto-provisioned location + specialist), then
+   * consume the pending row. Re-checks slug/email/phone uniqueness first, since
+   * they could have been taken since signup. Returns the created admin User.
+   */
+  private async provisionFromPending(
+    pending: PendingRegistration,
+  ): Promise<User> {
     // Re-check uniqueness at activation (someone could have taken slug/email/
     // phone in the meantime). If taken, surface a clear error.
     const slug = pending.slug || null; // empty string → no slug
@@ -113,7 +145,7 @@ export class SignupService {
     await this.assertPhoneFree(pending.adminPhone);
 
     const partnerId = newId();
-    const adminUser = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await tx.partner.create({
         data: {
           id: partnerId,
@@ -169,9 +201,6 @@ export class SignupService {
 
       return user;
     });
-
-    // Auto-login: issue a session for the freshly created admin.
-    return this.auth.loginTrustedUser(adminUser);
   }
 
   // ── guards ────────────────────────────────────────────────
