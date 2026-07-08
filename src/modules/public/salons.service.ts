@@ -11,6 +11,9 @@ export interface SalonCard {
   type: string;
   accent: string;
   tagline: string;
+  /** Brand logo URL (may be a same-origin "/uploads/.." path). Null when unset —
+   *  the client falls back to a letter avatar. */
+  logoUrl: string | null;
   rating: number;
   reviews: number;
   heroTints: string[];
@@ -123,6 +126,7 @@ export class SalonsService {
         type: p.type,
         accent: p.accent,
         tagline: p.presentation?.tagline ?? '',
+        logoUrl: p.presentation?.logoUrl || null,
         rating: p.presentation ? Number(p.presentation.rating) : 0,
         reviews: p.presentation?.reviews ?? 0,
         heroTints,
