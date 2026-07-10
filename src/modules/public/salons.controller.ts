@@ -38,10 +38,14 @@ export class SalonsController {
     const slugs = await this.salons.sitemapSlugs();
     const today = new Date().toISOString().slice(0, 10);
 
+    // No trailing slashes (except root): the SPA serves /salons & /signup
+    // WITHOUT a trailing slash and the runtime canonical points there, so the
+    // sitemap URL must match exactly — otherwise Google reports the crawled
+    // slashed URL as an "Alternate page with proper canonical tag".
     const staticUrls = [
       { loc: `${SITE}/`, priority: '1.0', changefreq: 'weekly' },
-      { loc: `${SITE}/salons/`, priority: '0.9', changefreq: 'daily' },
-      { loc: `${SITE}/signup/`, priority: '0.7', changefreq: 'monthly' },
+      { loc: `${SITE}/salons`, priority: '0.9', changefreq: 'daily' },
+      { loc: `${SITE}/signup`, priority: '0.7', changefreq: 'monthly' },
     ];
 
     const urls = [
