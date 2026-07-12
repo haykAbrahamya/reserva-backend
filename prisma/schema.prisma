@@ -265,6 +265,9 @@ model Specialist {
   title      String  @default("")
   phone      String  @default("")
   active     Boolean @default(true)
+  /// Optional profile photo URL. Shown instead of the name-initial avatar where
+  /// set (public team card, specialist modal, booking picker). Empty = initials.
+  avatarUrl  String  @default("")
 
   /// Recurring weekly schedule: { mon: { enabled, start, end }, ... }.
   schedule Json @default("{}")

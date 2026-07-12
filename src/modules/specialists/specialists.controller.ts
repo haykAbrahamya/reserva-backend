@@ -1,6 +1,20 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { SpecialistsService } from './specialists.service';
+import { SpecialistAvatarService } from './specialist-avatar.service';
 import { TimeOffService } from './time-off.service';
 import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import { CurrentUser } from '@/auth/decorators';
@@ -12,12 +26,16 @@ import {
 } from './dto/specialist.dto';
 import { CreateTimeOffDto, UpdateTimeOffDto } from './dto/time-off.dto';
 
+// 8 MB cap on the raw upload (sharp shrinks it to a square WebP afterwards).
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
 @ApiTags('Specialists')
 @ApiBearerAuth()
 @Controller('specialists')
 export class SpecialistsController {
   constructor(
     private readonly specialists: SpecialistsService,
+    private readonly avatars: SpecialistAvatarService,
     private readonly timeOff: TimeOffService,
     private readonly reviews: SpecialistReviewsService,
   ) {}
@@ -53,6 +71,26 @@ export class SpecialistsController {
   @ApiOperation({ summary: 'Soft-delete a specialist' })
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.specialists.remove(user.partnerId, id);
+  }
+
+  // ── Profile photo ─────────────────────────────────────────
+
+  @Post(':id/avatar')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: "Upload a specialist's profile photo" })
+  uploadAvatar(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @UploadedFile() file: { buffer: Buffer; mimetype: string },
+  ) {
+    return this.avatars.setAvatar(user.partnerId, id, file);
+  }
+
+  @Delete(':id/avatar')
+  @ApiOperation({ summary: "Remove a specialist's profile photo" })
+  removeAvatar(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.avatars.removeAvatar(user.partnerId, id);
   }
 
   // ── Reviews (nested under a specialist) ───────────────────
