@@ -48,8 +48,27 @@ export class SalonsController {
       { loc: `${SITE}/signup`, priority: '0.7', changefreq: 'monthly' },
     ];
 
+    // Keyword/category landing pages (prerendered by the client — the slug list
+    // is the single source of truth in apps/client/src/lib/categories.data.json;
+    // mirrored here so the sitemap advertises them for discovery).
+    const categorySlugs = [
+      'manicure',
+      'hair',
+      'barber',
+      'massage',
+      'facial',
+      'lashes',
+      'brows',
+      'laser',
+    ];
+    const categoryUrls = categorySlugs.map((slug) => ({
+      loc: `${SITE}/salons/c/${slug}`,
+      priority: '0.85',
+      changefreq: 'weekly',
+    }));
+
     const urls = [
-      ...staticUrls.map(
+      ...[...staticUrls, ...categoryUrls].map(
         (u) =>
           `  <url><loc>${u.loc}</loc><changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`,
       ),
