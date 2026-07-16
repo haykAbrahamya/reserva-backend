@@ -4,6 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AppException } from '@/common/errors/app.exception';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
+import { cleanLocalizedInput } from '@/common/schemas/localized';
 import type { CreateServiceDto, UpdateServiceDto, ListServiceQueryDto } from './dto/service.dto';
 
 @Injectable()
@@ -50,8 +51,16 @@ export class ServicesService {
   }
 
   async create(partnerId: string, dto: CreateServiceDto) {
+    // Normalize translation blobs: trim, drop empty locales, {} → null.
+    const { nameI18n, categoryI18n, ...rest } = dto;
     const service = await this.prisma.service.create({
-      data: { ...(dto as Prisma.ServiceUncheckedCreateInput), id: newId(), partnerId },
+      data: {
+        ...(rest as Prisma.ServiceUncheckedCreateInput),
+        id: newId(),
+        partnerId,
+        nameI18n: cleanLocalizedInput(nameI18n) ?? Prisma.JsonNull,
+        categoryI18n: cleanLocalizedInput(categoryI18n) ?? Prisma.JsonNull,
+      },
     });
 
     // Single-mode partners have no Specialists page, so there's no UI to attach
@@ -90,9 +99,15 @@ export class ServicesService {
 
   async update(partnerId: string, id: string, dto: UpdateServiceDto) {
     await this.get(partnerId, id); // tenant-scoped existence check
+    const { nameI18n, categoryI18n, ...rest } = dto;
     // Switching to a fixed price must clear any previous upper bound so a stale
     // priceMax can't linger and re-render the service as a range.
-    const data = dto.priceType === 'fixed' ? { ...dto, priceMax: null } : dto;
+    const data: Prisma.ServiceUncheckedUpdateInput =
+      rest.priceType === 'fixed' ? { ...rest, priceMax: null } : { ...rest };
+    // Only touch a translation column when the client sent that key (undefined =
+    // leave as-is; present = set/clear, with empty → JsonNull).
+    if (nameI18n !== undefined) data.nameI18n = cleanLocalizedInput(nameI18n) ?? Prisma.JsonNull;
+    if (categoryI18n !== undefined) data.categoryI18n = cleanLocalizedInput(categoryI18n) ?? Prisma.JsonNull;
     const service = await this.prisma.service.update({ where: { id }, data });
 
     // A service flipped from facility → requires-specialist needs the same

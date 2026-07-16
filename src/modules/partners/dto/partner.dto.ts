@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { localizedTextSchema } from '@/common/schemas/localized';
 
 const hexColor = z.string().regex(/^#([0-9a-fA-F]{6})$/, 'Expected a #RRGGBB hex color');
 
@@ -17,7 +18,11 @@ const whatsappNumber = z
 
 export const presentationSchema = z.object({
   tagline: z.string().max(200).default(''),
+  /** Optional per-language overrides for `tagline`. */
+  taglineI18n: localizedTextSchema,
   about: z.string().max(4000).default(''),
+  /** Optional per-language overrides for `about`. */
+  aboutI18n: localizedTextSchema,
   hours: z.string().max(120).default(''),
   instagram: socialUrl,
   facebook: socialUrl,

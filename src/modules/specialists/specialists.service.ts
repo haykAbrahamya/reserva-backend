@@ -5,6 +5,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
+import { cleanLocalizedInput } from '@/common/schemas/localized';
 import type {
   CreateSpecialistDto,
   UpdateSpecialistDto,
@@ -88,6 +89,7 @@ export class SpecialistsService {
         locationId: dto.locationId,
         name: dto.name,
         title: dto.title ?? '',
+        titleI18n: cleanLocalizedInput(dto.titleI18n) ?? Prisma.JsonNull,
         phone: dto.phone ?? '',
         active: dto.active ?? true,
         // New specialists get a sensible default week so the Hours editor is
@@ -113,6 +115,7 @@ export class SpecialistsService {
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
           ...(dto.title !== undefined && { title: dto.title }),
+          ...(dto.titleI18n !== undefined && { titleI18n: cleanLocalizedInput(dto.titleI18n) ?? Prisma.JsonNull }),
           ...(dto.phone !== undefined && { phone: dto.phone }),
           ...(dto.locationId !== undefined && { locationId: dto.locationId }),
           ...(dto.active !== undefined && { active: dto.active }),

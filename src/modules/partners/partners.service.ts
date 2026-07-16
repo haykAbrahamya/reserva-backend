@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
+import { cleanLocalizedInput } from '@/common/schemas/localized';
 import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import type { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
 
@@ -175,7 +176,9 @@ export class PartnersService {
           create: {
             partnerId,
             tagline: presentation.tagline ?? '',
+            taglineI18n: cleanLocalizedInput(presentation.taglineI18n) ?? Prisma.JsonNull,
             about: presentation.about ?? '',
+            aboutI18n: cleanLocalizedInput(presentation.aboutI18n) ?? Prisma.JsonNull,
             hours: presentation.hours ?? '',
             instagram: presentation.instagram ?? '',
             facebook: presentation.facebook ?? '',
@@ -187,7 +190,13 @@ export class PartnersService {
           },
           update: {
             ...(presentation.tagline !== undefined && { tagline: presentation.tagline }),
+            ...(presentation.taglineI18n !== undefined && {
+              taglineI18n: cleanLocalizedInput(presentation.taglineI18n) ?? Prisma.JsonNull,
+            }),
             ...(presentation.about !== undefined && { about: presentation.about }),
+            ...(presentation.aboutI18n !== undefined && {
+              aboutI18n: cleanLocalizedInput(presentation.aboutI18n) ?? Prisma.JsonNull,
+            }),
             ...(presentation.hours !== undefined && { hours: presentation.hours }),
             ...(presentation.instagram !== undefined && { instagram: presentation.instagram }),
             ...(presentation.facebook !== undefined && { facebook: presentation.facebook }),

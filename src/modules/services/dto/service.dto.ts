@@ -1,10 +1,15 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { paginationSchema } from '@/common/dto/pagination';
+import { localizedTextSchema } from '@/common/schemas/localized';
 
 const serviceFields = z.object({
   name: z.string().trim().min(1).max(120),
+  /** Optional per-language overrides for `name`. */
+  nameI18n: localizedTextSchema,
   category: z.string().trim().max(60).default(''),
+  /** Optional per-language overrides for `category`. */
+  categoryI18n: localizedTextSchema,
   /** 'fixed' → exact `price`. 'range' → `price` (min) .. `priceMax` (max). */
   priceType: z.enum(['fixed', 'range']).default('fixed'),
   /** Fixed price, or the lower bound of a range. */

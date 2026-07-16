@@ -1,11 +1,14 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { weekScheduleSchema } from '@/common/schemas/week-schedule.schema';
+import { localizedTextSchema } from '@/common/schemas/localized';
 import { paginationSchema } from '@/common/dto/pagination';
 
 export const createSpecialistSchema = z.object({
   name: z.string().trim().min(1).max(120),
   title: z.string().trim().max(120).default(''),
+  /** Optional per-language overrides for `title` (role). */
+  titleI18n: localizedTextSchema,
   phone: z.string().trim().max(40).default(''),
   locationId: z.string().uuid(),
   active: z.boolean().default(true),
