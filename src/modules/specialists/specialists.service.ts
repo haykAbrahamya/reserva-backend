@@ -88,6 +88,7 @@ export class SpecialistsService {
         partnerId,
         locationId: dto.locationId,
         name: dto.name,
+        nameI18n: cleanLocalizedInput(dto.nameI18n) ?? Prisma.JsonNull,
         title: dto.title ?? '',
         titleI18n: cleanLocalizedInput(dto.titleI18n) ?? Prisma.JsonNull,
         phone: dto.phone ?? '',
@@ -114,6 +115,7 @@ export class SpecialistsService {
         where: { id },
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.nameI18n !== undefined && { nameI18n: cleanLocalizedInput(dto.nameI18n) ?? Prisma.JsonNull }),
           ...(dto.title !== undefined && { title: dto.title }),
           ...(dto.titleI18n !== undefined && { titleI18n: cleanLocalizedInput(dto.titleI18n) ?? Prisma.JsonNull }),
           ...(dto.phone !== undefined && { phone: dto.phone }),

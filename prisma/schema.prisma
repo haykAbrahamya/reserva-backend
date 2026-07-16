@@ -272,6 +272,8 @@ model Specialist {
   partnerId  String
   locationId String
   name       String
+  /// Optional per-language overrides for `name` (transliteration), shape { hy?, en?, ru? }.
+  nameI18n   Json?
   title      String  @default("")
   /// Optional per-language overrides for `title` (role), shape { hy?, en?, ru? }.
   titleI18n  Json?

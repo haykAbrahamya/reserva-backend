@@ -6,6 +6,8 @@ import { paginationSchema } from '@/common/dto/pagination';
 
 export const createSpecialistSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  /** Optional per-language overrides for `name`. */
+  nameI18n: localizedTextSchema,
   title: z.string().trim().max(120).default(''),
   /** Optional per-language overrides for `title` (role). */
   titleI18n: localizedTextSchema,
