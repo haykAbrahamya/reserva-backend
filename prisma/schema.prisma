@@ -106,6 +106,12 @@ model Partner {
   /// hidden). Set by the partner; overridable by platform staff. Default support.
   supportWidget SupportWidgetMode @default(support)
 
+  /// Default language for the PUBLIC client page (slug.reserva.am) shown to
+  /// first-time visitors. One of the client locales ('hy' | 'en' | 'ru').
+  /// A visitor's own saved language choice always wins over this. Presentation-
+  /// only; defaults to Armenian (our primary market).
+  defaultLocale String @default("hy")
+
   // Branding
   accent String // primary brand color (hex)
 

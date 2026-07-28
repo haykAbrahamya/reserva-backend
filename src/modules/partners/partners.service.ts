@@ -167,6 +167,7 @@ export class PartnersService {
           ...(rest.kind !== undefined && { kind: rest.kind }),
           ...(rest.template !== undefined && { template: rest.template }),
           ...(rest.supportWidget !== undefined && { supportWidget: rest.supportWidget }),
+          ...(rest.defaultLocale !== undefined && { defaultLocale: rest.defaultLocale }),
         },
       });
 
