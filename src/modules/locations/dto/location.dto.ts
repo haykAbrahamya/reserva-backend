@@ -1,10 +1,14 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { weekScheduleSchema } from '@/common/schemas/week-schedule.schema';
+import { localizedTextSchema } from '@/common/schemas/localized';
 import { paginationSchema } from '@/common/dto/pagination';
 
 export const createLocationSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  /** Optional per-language overrides for `name` ({ hy?, en?, ru? }). Only the
+   *  branch name is translatable — address/geo stay single-value. */
+  nameI18n: localizedTextSchema,
   address: z.string().trim().min(1).max(240),
   phone: z.string().trim().max(40).default(''),
   hours: weekScheduleSchema.optional(),

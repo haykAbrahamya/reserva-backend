@@ -187,6 +187,11 @@ model Location {
   id        String @id
   partnerId String
   name      String
+  /// Optional per-language overrides for `name`, shape { hy?, en?, ru? }. Null /
+  /// missing locale → falls back to `name` (the base value stays source of
+  /// truth for search/sort). Additive: existing rows keep behaving as today.
+  /// Only the branch NAME is translatable — address/geo stays single-value.
+  nameI18n  Json?
   address   String
   phone     String @default("")
 

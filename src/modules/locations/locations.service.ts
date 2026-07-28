@@ -5,6 +5,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
+import { cleanLocalizedInput } from '@/common/schemas/localized';
 import type { CreateLocationDto, UpdateLocationDto, ListLocationQueryDto } from './dto/location.dto';
 
 @Injectable()
@@ -52,6 +53,8 @@ export class LocationsService {
         id: newId(),
         partnerId,
         name: dto.name,
+        // Normalize translation blob: trim, drop empty locales, {} → null.
+        nameI18n: cleanLocalizedInput(dto.nameI18n) ?? Prisma.JsonNull,
         address: dto.address,
         phone: dto.phone ?? '',
         hours: (dto.hours ?? {}) as Prisma.InputJsonValue,
@@ -63,17 +66,20 @@ export class LocationsService {
 
   async update(partnerId: string, id: string, dto: UpdateLocationDto) {
     await this.get(partnerId, id);
-    return this.prisma.location.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.address !== undefined && { address: dto.address }),
-        ...(dto.phone !== undefined && { phone: dto.phone }),
-        ...(dto.hours !== undefined && { hours: dto.hours as Prisma.InputJsonValue }),
-        ...(dto.lat !== undefined && { lat: dto.lat }),
-        ...(dto.lng !== undefined && { lng: dto.lng }),
-      },
-    });
+    const data: Prisma.LocationUncheckedUpdateInput = {
+      ...(dto.name !== undefined && { name: dto.name }),
+      ...(dto.address !== undefined && { address: dto.address }),
+      ...(dto.phone !== undefined && { phone: dto.phone }),
+      ...(dto.hours !== undefined && { hours: dto.hours as Prisma.InputJsonValue }),
+      ...(dto.lat !== undefined && { lat: dto.lat }),
+      ...(dto.lng !== undefined && { lng: dto.lng }),
+    };
+    // Only touch the translation column when the client sent it (undefined =
+    // leave as-is; present = set/clear, with empty → JsonNull).
+    if (dto.nameI18n !== undefined) {
+      data.nameI18n = cleanLocalizedInput(dto.nameI18n) ?? Prisma.JsonNull;
+    }
+    return this.prisma.location.update({ where: { id }, data });
   }
 
   /** Soft-delete. Blocks if specialists are still assigned to the branch. */
