@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { PublicBookingService } from './public-booking.service';
+import { PublicCoursesService } from './public-courses.service';
 import { PartnersService } from '@/modules/partners/partners.service';
 import { Public } from '@/auth/decorators';
 import {
@@ -9,6 +10,7 @@ import {
   AvailabilitySummaryQueryDto,
   PublicCreateBookingDto,
 } from './dto/public-booking.dto';
+import { PublicCourseRegisterDto } from './dto/public-course.dto';
 
 /**
  * Unauthenticated, public-facing booking surface for the client app
@@ -20,6 +22,7 @@ import {
 export class PublicController {
   constructor(
     private readonly publicBooking: PublicBookingService,
+    private readonly publicCourses: PublicCoursesService,
     private readonly partners: PartnersService,
   ) {}
 
@@ -46,5 +49,12 @@ export class PublicController {
   @ApiOperation({ summary: 'Create a booking from the public page' })
   create(@Param('slug') slug: string, @Body() dto: PublicCreateBookingDto) {
     return this.publicBooking.createBooking(slug, dto);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('courses/register')
+  @ApiOperation({ summary: 'Register for a course from the public page (pending)' })
+  registerForCourse(@Param('slug') slug: string, @Body() dto: PublicCourseRegisterDto) {
+    return this.publicCourses.register(slug, dto);
   }
 }

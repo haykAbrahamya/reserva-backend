@@ -82,6 +82,43 @@ enum ServicePriceType {
   range
 }
 
+/// Difficulty level of a course, shown as a badge on the public card. Optional
+/// on the course (null = not specified).
+enum CourseLevel {
+  beginner
+  intermediate
+  advanced
+}
+
+/// Lifecycle of one course run (a "cohort"). draft → open (accepting members) →
+/// running (started) → completed (finished) → archived (read-only history). A
+/// course always has exactly one non-archived "current" run at a time.
+enum CohortStatus {
+  draft
+  open
+  running
+  completed
+  archived
+}
+
+/// Whether a course member was added by staff or self-registered from the
+/// public page — mirrors BookingSource for symmetry/analytics.
+enum EnrollmentSource {
+  public // member registered themselves via /p/:slug
+  backoffice // added by an admin/manager
+}
+
+/// State of a single course member. Self-registrations land as `pending` and
+/// staff confirm; manual adds are `confirmed` immediately. Terminal states
+/// mirror BookingStatus so the two domains read alike.
+enum EnrollmentStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+  noshow
+}
+
 // ── Partner (tenant) ────────────────────────────────────────
 
 model Partner {
@@ -130,6 +167,12 @@ model Partner {
   /// partner sees it read-only. Default off — salons opt in via the platform.
   marketplaceListed Boolean @default(false)
 
+  /// Whether the Courses (academy) feature is enabled for this partner. An opt-in
+  /// premium capability toggled ONLY from the internal-backoffice (platform staff);
+  /// when false the Courses nav (backoffice) and the public Courses section are
+  /// hidden and public registration is rejected. Default off.
+  coursesEnabled Boolean @default(false)
+
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -142,6 +185,9 @@ model Partner {
   bookings     Booking[]
   clients      Client[]
   users        User[]
+  courses      Course[]
+  courseCohorts CourseCohort[]
+  courseEnrollments CourseEnrollment[]
   supportThread SupportThread?
 
   @@index([active])
@@ -218,6 +264,7 @@ model Location {
   specialists Specialist[]
   bookings    Booking[]
   users       User[]
+  courseCohorts CourseCohort[]
 
   @@index([partnerId, deletedAt])
   @@map("locations")
@@ -276,6 +323,137 @@ model Service {
   @@map("services")
 }
 
+// ── Course ──────────────────────────────────────────────────
+// A salon "academy" offering (e.g. a hair-styling course). Two-level model:
+//   Course  — the reusable template (title, cover, price, tutor).
+//   CourseCohort — one actual RUN of it (dates, capacity, members, status).
+//   CourseEnrollment — a member of a run. Self-contained (name/phone stored
+//     inline); a course member is NOT a booking Client — the two domains are
+//     kept fully separate on purpose.
+
+model Course {
+  id        String @id
+  partnerId String
+
+  /// Course title (base value = source of truth for search/sort).
+  title     String
+  /// Optional per-language overrides for `title`, shape { hy?, en?, ru? }.
+  titleI18n Json?
+  /// One-line teaser shown on the public card.
+  summary   String @default("")
+  /// Optional per-language overrides for `summary`.
+  summaryI18n Json?
+  /// Long-form description / curriculum (what you'll learn).
+  description String @default("")
+  /// Optional per-language overrides for `description`.
+  descriptionI18n Json?
+
+  /// Cover image URL (WebP under <uploads>/<partnerId>/). Empty = gradient placeholder.
+  coverUrl  String @default("")
+
+  /// Price in the smallest currency unit (whole AMD). 0 = free.
+  price     Int    @default(0)
+
+  /// Optional tutor. EITHER a link to one of the salon's specialists (reuses
+  /// their name/photo) OR free-text for a guest instructor — never both required.
+  tutorSpecialistId String?
+  tutorName         String  @default("")
+  tutorTitle        String  @default("")
+
+  /// Optional difficulty badge.
+  level     CourseLevel?
+
+  /// Public visibility. When false the course is a draft (hidden from /p/:slug).
+  active    Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  partner        Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Tutor link is optional and must not orphan on specialist delete → SetNull.
+  tutorSpecialist Specialist?   @relation("CourseTutor", fields: [tutorSpecialistId], references: [id], onDelete: SetNull)
+  cohorts        CourseCohort[]
+
+  @@index([partnerId, deletedAt])
+  @@index([partnerId, active])
+  @@map("courses")
+}
+
+/// One run of a course. A course always has exactly one non-archived "current"
+/// cohort; "start a new run" archives the old one and creates a fresh one.
+model CourseCohort {
+  id        String @id
+  courseId  String
+  partnerId String // denormalized for fast tenant-scoped queries
+
+  /// Optional branch this run happens at.
+  locationId String?
+
+  /// Optional fixed dates (group courses). Null = rolling/undated.
+  startDate DateTime?
+  endDate   DateTime?
+  /// Free-text schedule, e.g. "Tue & Thu · 18:00–20:00". Schedules are irregular
+  /// enough that structured slots aren't worth it here.
+  scheduleText String @default("")
+
+  /// Max confirmed members. 0 = unlimited.
+  capacity  Int          @default(0)
+  status    CohortStatus @default(open)
+  /// Whether self-registration from the public page is accepted for this run.
+  registrationOpen Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  course      Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  partner     Partner            @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location    Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  enrollments CourseEnrollment[]
+
+  @@index([courseId, deletedAt])
+  @@index([partnerId, status])
+  @@map("course_cohorts")
+}
+
+/// A member of a course run. Self-contained: the member's contact is stored
+/// inline (NOT linked to the booking Client table) — course students live in
+/// their own world, separate from appointment clients.
+model CourseEnrollment {
+  id        String @id
+  cohortId  String
+  partnerId String // denormalized for fast tenant-scoped queries
+
+  /// Member contact — stored directly on the enrollment.
+  memberName  String
+  memberPhone String
+  memberEmail String @default("")
+
+  status EnrollmentStatus @default(pending)
+  source EnrollmentSource @default(backoffice)
+  notes  String?
+
+  /// Price captured at enrollment time (course price may change later).
+  priceAtEnroll Int @default(0)
+  /// UI language the member registered in ('en' | 'hy' | 'ru'); null for staff adds.
+  locale String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cohort  CourseCohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  partner Partner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  /// One active enrollment per phone per run. (A cancelled member re-registering
+  /// is handled by reactivating the existing row, not inserting a duplicate.)
+  @@unique([cohortId, memberPhone])
+  @@index([partnerId, status])
+  @@index([cohortId, status])
+  @@map("course_enrollments")
+}
+
 // ── Specialist ──────────────────────────────────────────────
 
 model Specialist {
@@ -307,6 +485,8 @@ model Specialist {
   timeOff   SpecialistTimeOff[]
   bookings  Booking[]
   reviews   SpecialistReview[]
+  /// Courses where this specialist is credited as the tutor (optional link).
+  tutoredCourses Course[]       @relation("CourseTutor")
 
   @@index([partnerId, deletedAt])
   @@index([locationId, active])
@@ -525,6 +705,7 @@ enum NotificationType {
   booking_confirmed
   booking_completed
   booking_noshow
+  course_registration
 }
 
 /// In-app notification feed — ONE row per recipient user (so read/unread is

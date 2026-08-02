@@ -11,6 +11,7 @@ import {
   SetPartnerActiveDto,
   SetPartnerMarketplaceDto,
   SetPartnerBookingsDto,
+  SetPartnerCoursesDto,
   SetPartnerKindDto,
   PlatformUpdateUserDto,
   PlatformResetPasswordDto,
@@ -64,6 +65,12 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Enable/disable the public booking flow (contact-only mode)' })
   setBookings(@Param('id') id: string, @Body() dto: SetPartnerBookingsDto) {
     return this.partners.setBookings(id, dto.enabled);
+  }
+
+  @Patch(':id/courses')
+  @ApiOperation({ summary: 'Enable/disable the Courses (academy) feature for a partner' })
+  setCourses(@Param('id') id: string, @Body() dto: SetPartnerCoursesDto) {
+    return this.partners.setCourses(id, dto.enabled);
   }
 
   @Patch(':id/kind')

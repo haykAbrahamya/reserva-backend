@@ -261,6 +261,13 @@ export class PlatformPartnersService {
     return this.get(id);
   }
 
+  /** Platform-curated: turn the Courses (academy) feature on/off for a partner. */
+  async setCourses(id: string, enabled: boolean) {
+    await this.assertExists(id);
+    await this.prisma.partner.update({ where: { id }, data: { coursesEnabled: enabled } });
+    return this.get(id);
+  }
+
   /**
    * Switch a partner between salon and single. When switching to `single`, make
    * sure the booking engine has the one location + specialist it needs (provision

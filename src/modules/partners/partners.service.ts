@@ -72,6 +72,22 @@ export class PartnersService {
           include: { services: { select: { serviceId: true } } },
           orderBy: { name: 'asc' },
         },
+        // Public courses: published (active) courses, newest first, each with its
+        // tutor and current (non-archived) run + a confirmed-seat count so the
+        // client can show "N spots left" and gate registration.
+        courses: {
+          where: { deletedAt: null, active: true },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            tutorSpecialist: { select: { id: true, name: true, nameI18n: true, title: true, titleI18n: true, avatarUrl: true } },
+            cohorts: {
+              where: { deletedAt: null, status: { not: 'archived' } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              include: { _count: { select: { enrollments: { where: { status: { in: ['pending', 'confirmed'] } } } } } },
+            },
+          },
+        },
       },
     });
     if (!partner) throw AppException.notFound('Salon not found');
@@ -276,5 +292,50 @@ function serializePartner<T extends Record<string, unknown>>(
         reviewCount: agg?.reviewCount ?? 0,
       };
     }),
+    // Courses are a platform-gated feature: when disabled for this partner, the
+    // public page shows none (registration is also rejected server-side).
+    courses: partner.coursesEnabled
+      ? serializePublicCourses(partner.courses as PublicCourseRow[] | undefined)
+      : [],
   };
+}
+
+type PublicCohortRow = {
+  id: string;
+  status: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  scheduleText: string;
+  capacity: number;
+  registrationOpen: boolean;
+  locationId: string | null;
+  _count: { enrollments: number };
+};
+type PublicCourseRow = { cohorts?: PublicCohortRow[] } & Record<string, unknown>;
+
+/** Flatten each course's single current run into a lean public shape: the
+ *  registration state + seats occupied so the client can show "N spots left"
+ *  and gate the register button. Archived courses were already filtered out. */
+function serializePublicCourses(courses: PublicCourseRow[] | undefined) {
+  if (!courses) return undefined;
+  return courses.map((course) => {
+    const { cohorts, ...rest } = course;
+    const run = cohorts?.[0];
+    return {
+      ...rest,
+      currentCohort: run
+        ? {
+            id: run.id,
+            status: run.status,
+            startDate: run.startDate,
+            endDate: run.endDate,
+            scheduleText: run.scheduleText,
+            capacity: run.capacity,
+            registrationOpen: run.registrationOpen,
+            locationId: run.locationId,
+            takenCount: run._count.enrollments,
+          }
+        : null,
+    };
+  });
 }

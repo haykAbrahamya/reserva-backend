@@ -184,6 +184,65 @@ export class BookingNotifier {
     }
   }
 
+  /**
+   * Fire-and-forget: notify backoffice staff that someone self-registered for a
+   * course. Course enrollment is a partner-level event (a run has no location),
+   * so recipients are the partner's active ADMINS. Lands in the same bell +
+   * web-push channel as bookings, so it needs no new plumbing on the client side
+   * beyond an icon + deep-link for the new type.
+   */
+  notifyEnrollment(input: {
+    partnerId: string;
+    courseId: string;
+    courseTitle: string;
+    memberName: string;
+  }): void {
+    this.runEnrollment(input).catch((e) =>
+      this.logger.warn(`Enrollment notification failed: ${(e as Error).message}`),
+    );
+  }
+
+  private async runEnrollment(input: {
+    partnerId: string;
+    courseId: string;
+    courseTitle: string;
+    memberName: string;
+  }): Promise<void> {
+    const recipients = await this.prisma.user.findMany({
+      where: { partnerId: input.partnerId, active: true, deletedAt: null, role: 'admin' },
+      select: { id: true },
+    });
+    if (recipients.length === 0) return;
+
+    const userIds = recipients.map((r) => r.id);
+    const title = 'New course registration';
+    const body = `${input.memberName} · ${input.courseTitle}`;
+    const data: Prisma.InputJsonValue = {
+      courseId: input.courseId,
+      courseTitle: input.courseTitle,
+      memberName: input.memberName,
+    };
+
+    await this.prisma.notification.createMany({
+      data: userIds.map((userId) => ({
+        id: newId(),
+        userId,
+        partnerId: input.partnerId,
+        type: 'course_registration' as NotificationType,
+        title,
+        body,
+        data,
+      })),
+    });
+
+    await this.push.notifyUsers(userIds, {
+      title,
+      body,
+      url: `/courses?focus=${input.courseId}`,
+      tag: `course-${input.courseId}`,
+    });
+  }
+
   private async run(event: BookingEvent, b: NotifiableBooking, actorId?: string): Promise<void> {
     const recipients = await this.prisma.user.findMany({
       where: {
