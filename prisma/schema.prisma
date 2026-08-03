@@ -318,6 +318,11 @@ model Service {
 
   active    Boolean @default(true)
 
+  /// Manual display order (0-based) within a partner's service list. Drives both
+  /// the backoffice list and the public page so they always agree. Set by the
+  /// partner via drag-to-reorder; new services append to the end. Lower = first.
+  sortOrder Int @default(0)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -328,6 +333,7 @@ model Service {
 
   @@index([partnerId, deletedAt])
   @@index([partnerId, active])
+  @@index([partnerId, sortOrder])
   @@map("services")
 }
 

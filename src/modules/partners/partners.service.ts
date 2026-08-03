@@ -66,7 +66,7 @@ export class PartnersService {
       include: {
         presentation: true,
         locations: { where: { deletedAt: null }, orderBy: { name: 'asc' } },
-        services: { where: { deletedAt: null, active: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] },
+        services: { where: { deletedAt: null, active: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
         specialists: {
           where: { deletedAt: null, active: true },
           include: { services: { select: { serviceId: true } } },

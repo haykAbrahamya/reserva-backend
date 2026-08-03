@@ -58,3 +58,11 @@ export const listServiceQuerySchema = paginationSchema.extend({
   search: z.string().trim().optional(),
 });
 export class ListServiceQueryDto extends createZodDto(listServiceQuerySchema) {}
+
+/** Drag-to-reorder: the partner's services in their new display order. Any id
+ *  not owned by the partner is ignored; unlisted services keep their relative
+ *  order after the listed ones. Mirrors the gallery-reorder contract. */
+export const reorderServicesSchema = z.object({
+  ids: z.array(z.string().max(64)).max(500),
+});
+export class ReorderServicesDto extends createZodDto(reorderServicesSchema) {}

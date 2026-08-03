@@ -25,9 +25,11 @@ export class ServicesService {
           }
         : {}),
     };
+    // Manual display order is the source of truth; createdAt is a stable
+    // tiebreaker for rows that still share a position (e.g. freshly created).
     const orderBy: Prisma.ServiceOrderByWithRelationInput[] = [
-      { category: 'asc' },
-      { name: 'asc' },
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
     ];
 
     if (q.all) {
@@ -53,11 +55,21 @@ export class ServicesService {
   async create(partnerId: string, dto: CreateServiceDto) {
     // Normalize translation blobs: trim, drop empty locales, {} → null.
     const { nameI18n, categoryI18n, ...rest } = dto;
+    // New services append to the end of the partner's list. `sortOrder` is
+    // server-owned (never accepted from the client) — set it to one past the
+    // current max so drag-to-reorder stays the only way to change positions.
+    const last = await this.prisma.service.findFirst({
+      where: { partnerId, deletedAt: null },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
+    const nextSortOrder = last ? last.sortOrder + 1 : 0;
     const service = await this.prisma.service.create({
       data: {
         ...(rest as Prisma.ServiceUncheckedCreateInput),
         id: newId(),
         partnerId,
+        sortOrder: nextSortOrder,
         nameI18n: cleanLocalizedInput(nameI18n) ?? Prisma.JsonNull,
         categoryI18n: cleanLocalizedInput(categoryI18n) ?? Prisma.JsonNull,
       },
@@ -126,5 +138,43 @@ export class ServicesService {
       where: { id },
       data: { deletedAt: new Date(), active: false },
     });
+  }
+
+  /**
+   * Persist a drag-to-reorder. `ids` is the partner's services in their new
+   * order. We filter to ids the partner actually owns (tenant-scope + guard
+   * against stale/foreign ids), assign 0-based positions in that order, then
+   * append any owned services the client didn't mention so nothing is lost or
+   * collapsed to the same position. All writes run in one transaction.
+   */
+  async reorder(partnerId: string, ids: string[]) {
+    const rows = await this.prisma.service.findMany({
+      where: { partnerId, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+    const owned = new Set(rows.map((r) => r.id));
+
+    // Requested order, restricted to owned ids and de-duplicated.
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const id of ids) {
+      if (owned.has(id) && !seen.has(id)) {
+        ordered.push(id);
+        seen.add(id);
+      }
+    }
+    // Append owned services the client omitted, keeping their current relative
+    // order, so a partial payload can never strand or overwrite them.
+    for (const r of rows) if (!seen.has(r.id)) ordered.push(r.id);
+
+    await this.prisma.$transaction(
+      ordered.map((id, i) =>
+        this.prisma.service.update({
+          where: { id }, // id already proven partner-owned above
+          data: { sortOrder: i },
+        }),
+      ),
+    );
   }
 }

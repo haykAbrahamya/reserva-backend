@@ -1,12 +1,13 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
-import { CurrentUser } from '@/auth/decorators';
+import { CurrentUser, Roles } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import {
   CreateServiceDto,
   UpdateServiceDto,
   ListServiceQueryDto,
+  ReorderServicesDto,
 } from './dto/service.dto';
 
 @ApiTags('Services')
@@ -19,6 +20,16 @@ export class ServicesController {
   @ApiOperation({ summary: "List the partner's services" })
   list(@CurrentUser() user: AuthUser, @Query() q: ListServiceQueryDto) {
     return this.services.list(user.partnerId, q);
+  }
+
+  // Declared before the ':id' routes so the literal 'order' segment isn't
+  // swallowed by @Patch(':id'). Admin-only, matching the gallery reorder.
+  @Roles('admin')
+  @Patch('order')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Reorder services (drag-to-reorder, admin)' })
+  async reorder(@CurrentUser() user: AuthUser, @Body() dto: ReorderServicesDto) {
+    await this.services.reorder(user.partnerId, dto.ids);
   }
 
   @Get(':id')
