@@ -73,7 +73,11 @@ export class CreatePartnerDto extends createZodDto(createPartnerSchema) {}
 
 export const updatePartnerSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  /** Optional per-language overrides for the public `name` (title). */
+  nameI18n: localizedTextSchema,
   type: z.string().trim().min(1).max(80).optional(),
+  /** Optional per-language overrides for the public `type` (category chip). */
+  typeI18n: localizedTextSchema,
   accent: hexColor.optional(),
   active: z.boolean().optional(),
   autoConfirmBookings: z.boolean().optional(),

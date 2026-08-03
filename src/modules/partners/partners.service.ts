@@ -170,7 +170,13 @@ export class PartnersService {
         where: { id: partnerId },
         data: {
           ...(rest.name !== undefined && { name: rest.name }),
+          ...(rest.nameI18n !== undefined && {
+            nameI18n: cleanLocalizedInput(rest.nameI18n) ?? Prisma.JsonNull,
+          }),
           ...(rest.type !== undefined && { type: rest.type }),
+          ...(rest.typeI18n !== undefined && {
+            typeI18n: cleanLocalizedInput(rest.typeI18n) ?? Prisma.JsonNull,
+          }),
           ...(rest.accent !== undefined && { accent: rest.accent }),
           ...(rest.active !== undefined && { active: rest.active }),
           ...(rest.slug !== undefined && { slug: rest.slug }),
