@@ -16,14 +16,22 @@ export class ServicesService {
       partnerId,
       deletedAt: null,
       ...(q.includeInactive ? {} : { active: true }),
+      // Name search matches the base name (case-insensitive) OR any translation
+      // stored in nameI18n, so typing a term in hy/en/ru surfaces the service
+      // regardless of which language the visitor-facing name is in.
       ...(q.search
         ? {
             OR: [
               { name: { contains: q.search, mode: 'insensitive' } },
-              { category: { contains: q.search, mode: 'insensitive' } },
+              ...(['hy', 'en', 'ru'] as const).map((lng) => ({
+                nameI18n: { path: [lng], string_contains: q.search },
+              })),
             ],
           }
         : {}),
+      // Exact category filter from the dropdown. '' matches uncategorized
+      // services; undefined means "all categories".
+      ...(q.category !== undefined ? { category: q.category } : {}),
     };
     // Manual display order is the source of truth; createdAt is a stable
     // tiebreaker for rows that still share a position (e.g. freshly created).

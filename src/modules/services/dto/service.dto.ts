@@ -54,8 +54,12 @@ export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
 export const listServiceQuerySchema = paginationSchema.extend({
   /** Include soft-deleted + inactive. Default: only active, non-deleted. */
   includeInactive: z.coerce.boolean().default(false),
-  /** Free-text search over name/category. */
+  /** Free-text search over the service NAME — matches the base name AND any of
+   *  its translations (nameI18n), so a term in any language finds the service. */
   search: z.string().trim().optional(),
+  /** Exact category filter (the base category value picked from the dropdown).
+   *  Empty string is a valid value (services with no category). */
+  category: z.string().optional(),
 });
 export class ListServiceQueryDto extends createZodDto(listServiceQuerySchema) {}
 
