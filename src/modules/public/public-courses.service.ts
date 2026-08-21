@@ -21,11 +21,17 @@ export class PublicCoursesService {
   async register(slug: string, dto: PublicCourseRegisterDto) {
     const partner = await this.prisma.partner.findFirst({
       where: { slug, active: true, deletedAt: null },
-      select: { id: true, coursesEnabled: true },
+      select: { id: true, coursesEnabled: true, bookingsEnabled: true },
     });
     if (!partner) throw AppException.notFound('Salon not found');
     // Courses is a platform-gated feature — reject if it's off for this partner.
     if (!partner.coursesEnabled) {
+      throw AppException.badRequest(ErrorCode.ENROLLMENT_CLOSED, 'Registration for this course is not available');
+    }
+    // Contact-only partners (online booking disabled) take no online sign-ups of
+    // any kind — the public page shows a Call button instead of Register, and the
+    // endpoint enforces the same so a direct API call can't slip through.
+    if (!partner.bookingsEnabled) {
       throw AppException.badRequest(ErrorCode.ENROLLMENT_CLOSED, 'Registration for this course is not available');
     }
 

@@ -90,6 +90,16 @@ enum CourseLevel {
   advanced
 }
 
+/// How a course's price is presented publicly.
+/// - hidden: no price shown at all (e.g. "contact us" pricing)
+/// - free:   shown as "Free" (price is forced to 0)
+/// - paid:   shows the `price` amount (price must be > 0)
+enum CoursePriceMode {
+  hidden
+  free
+  paid
+}
+
 /// Lifecycle of one course run (a "cohort"). draft → open (accepting members) →
 /// running (started) → completed (finished) → archived (read-only history). A
 /// course always has exactly one non-archived "current" run at a time.
@@ -365,7 +375,13 @@ model Course {
   /// Cover image URL (WebP under <uploads>/<partnerId>/). Empty = gradient placeholder.
   coverUrl  String @default("")
 
-  /// Price in the smallest currency unit (whole AMD). 0 = free.
+  /// How the price is presented publicly (see CoursePriceMode). `paid` shows
+  /// `price`; `free` shows "Free"; `hidden` shows nothing. Defaults to `paid`
+  /// so existing rows with a price keep showing it (the migration sets rows
+  /// with price 0 to `free`, matching the old "0 = free" convention).
+  priceMode CoursePriceMode @default(paid)
+  /// Price in the smallest currency unit (whole AMD). Only meaningful when
+  /// priceMode = paid; forced to 0 for free/hidden.
   price     Int    @default(0)
 
   /// Optional tutor. EITHER a link to one of the salon's specialists (reuses

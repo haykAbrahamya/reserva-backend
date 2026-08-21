@@ -19,7 +19,10 @@ const courseFields = z.object({
   /** Optional per-language overrides for `description`. */
   descriptionI18n: localizedTextSchema,
 
-  /** Price in whole AMD. 0 = free. */
+  /** How the price is presented publicly: 'hidden' (nothing shown), 'free'
+   *  (shows "Free"), or 'paid' (shows `price`). */
+  priceMode: z.enum(['hidden', 'free', 'paid']).default('paid'),
+  /** Price in whole AMD. Only used when priceMode = 'paid'. */
   price: z.number().int().min(0).max(100_000_000).default(0),
 
   /** Tutor: EITHER a linked specialist id OR free-text name/title (guest).
@@ -35,10 +38,28 @@ const courseFields = z.object({
   active: z.boolean().default(true),
 });
 
-export const createCourseSchema = courseFields;
+/** Paid courses need a positive price. Only enforced when both fields are
+ *  present (so partial updates that touch neither still pass). */
+const requirePaidPrice = (
+  v: { priceMode?: 'hidden' | 'free' | 'paid'; price?: number },
+  ctx: z.RefinementCtx,
+) => {
+  if (v.priceMode === 'paid' && v.price !== undefined && v.price <= 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: 'Paid courses need a price above 0' });
+  }
+};
+
+/** Free/hidden courses carry no amount — force price to 0 so a stale value
+ *  can't linger. Leaves paid prices untouched. Applied after validation. */
+const normalizePrice = <T extends { priceMode?: 'hidden' | 'free' | 'paid'; price?: number }>(v: T): T =>
+  (v.priceMode === 'free' || v.priceMode === 'hidden') && v.price !== undefined
+    ? { ...v, price: 0 }
+    : v;
+
+export const createCourseSchema = courseFields.superRefine(requirePaidPrice).transform(normalizePrice);
 export class CreateCourseDto extends createZodDto(createCourseSchema) {}
 
-export const updateCourseSchema = courseFields.partial();
+export const updateCourseSchema = courseFields.partial().superRefine(requirePaidPrice).transform(normalizePrice);
 export class UpdateCourseDto extends createZodDto(updateCourseSchema) {}
 
 export const listCourseQuerySchema = paginationSchema.extend({
