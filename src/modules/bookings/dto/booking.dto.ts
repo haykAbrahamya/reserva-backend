@@ -28,6 +28,22 @@ export const calendarQuerySchema = z
   .refine((q) => q.from <= q.to, { message: '`from` must be on or before `to`', path: ['from'] });
 export class CalendarQueryDto extends createZodDto(calendarQuerySchema) {}
 
+/**
+ * Bookable start times for one service on one date, for the backoffice booking
+ * and reschedule pickers. Mirrors the public slots query, minus the slug (the
+ * partner comes from the auth context).
+ */
+export const bookingSlotsQuerySchema = z.object({
+  serviceId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  /** Omitted for facility/entry services that aren't tied to a person. */
+  specialistId: z.string().uuid().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  /** Reschedule: ignore this booking's own window so its slot stays pickable. */
+  excludeBookingId: z.string().uuid().optional(),
+});
+export class BookingSlotsQueryDto extends createZodDto(bookingSlotsQuerySchema) {}
+
 export const createBookingSchema = z.object({
   locationId: z.string().uuid(),
   /** Null/omitted for facility/entry services (spa) that aren't tied to a person. */

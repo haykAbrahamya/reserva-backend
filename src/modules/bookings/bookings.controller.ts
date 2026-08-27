@@ -7,6 +7,7 @@ import type { AuthUser } from '@/auth/auth.types';
 import {
   ListBookingsQueryDto,
   CalendarQueryDto,
+  BookingSlotsQueryDto,
   CreateBookingDto,
   UpdateBookingDto,
   UpdateStatusDto,
@@ -31,6 +32,12 @@ export class BookingsController {
   @ApiOperation({ summary: 'Bookings in a date window for the calendar view' })
   calendar(@CurrentUser() user: AuthUser, @Query() q: CalendarQueryDto) {
     return this.bookings.calendar(user.partnerId, q.from, q.to, user.locationId);
+  }
+
+  @Get('slots')
+  @ApiOperation({ summary: 'Bookable start times for a service on a date (backoffice pickers)' })
+  slots(@CurrentUser() user: AuthUser, @Query() q: BookingSlotsQueryDto) {
+    return this.bookings.slots(user.partnerId, q);
   }
 
   @Get(':id')

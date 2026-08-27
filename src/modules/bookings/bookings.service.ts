@@ -8,12 +8,18 @@ import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
 import { assertBookingAllowed } from './booking-rules';
+import { computeSlots, computeCapacitySlots } from '@/common/utils/availability';
+import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
 import type {
   ListBookingsQueryDto,
+  BookingSlotsQueryDto,
   CreateBookingDto,
   UpdateBookingDto,
 } from './dto/booking.dto';
 import type { BookingStatus } from '@prisma/client';
+
+/** One day in ms — used to widen slot queries so overnight windows aren't clipped. */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface CreateOpts {
   source: BookingSource;
@@ -102,6 +108,80 @@ export class BookingsService {
     });
     if (!booking) throw AppException.notFound('Booking not found');
     return booking;
+  }
+
+  /**
+   * Bookable 'HH:MM' start times for a service on one date, for the backoffice
+   * booking / reschedule pickers.
+   *
+   * Runs the SAME `computeSlots` engine the public booking page uses, so staff
+   * and clients can never be offered different times — and so overnight shifts
+   * (18:00 → 02:30, whose tail lands on the next date) are handled in exactly
+   * one place. Before this existed the pickers invented a fixed hourly grid that
+   * ignored working hours entirely, offering times the server then rejected.
+   */
+  async slots(partnerId: string, q: BookingSlotsQueryDto): Promise<string[]> {
+    const { specialist, service, location } = await this.loadRefs(
+      partnerId,
+      q.specialistId,
+      q.serviceId,
+      q.locationId,
+    );
+
+    // Local midnight → midnight for the requested calendar date.
+    const [y, m, d] = q.date.split('-').map(Number);
+    const day = new Date(y, m - 1, d);
+    const dayEnd = new Date(y, m - 1, d + 1);
+
+    // `create` refuses past times, so don't offer them either.
+    const notBefore = new Date(Date.now() - 60_000);
+
+    const activeBookings = await this.prisma.booking.findMany({
+      where: {
+        partnerId,
+        status: { in: ['pending', 'confirmed', 'completed'] },
+        // An overnight slot can start today and finish tomorrow, so widen the
+        // window by a day on each side rather than clipping to the date.
+        startAt: { lt: new Date(dayEnd.getTime() + DAY_MS) },
+        endAt: { gt: new Date(day.getTime() - DAY_MS) },
+        ...(q.excludeBookingId ? { id: { not: q.excludeBookingId } } : {}),
+        ...(specialist
+          ? { specialistId: specialist.id }
+          : { serviceId: service.id, locationId: location.id }),
+      },
+      select: { startAt: true, endAt: true },
+    });
+
+    if (!specialist) {
+      // Facility/entry service (spa, pool): location hours + concurrent capacity.
+      return computeCapacitySlots({
+        day,
+        durationMin: service.duration,
+        locationHours: location.hours as WeekScheduleInput | null,
+        busy: activeBookings,
+        capacity: Math.max(1, service.capacity),
+        notBefore,
+      });
+    }
+
+    const timeOff = await this.prisma.specialistTimeOff.findMany({
+      where: {
+        specialistId: specialist.id,
+        startAt: { lt: new Date(dayEnd.getTime() + DAY_MS) },
+        endAt: { gt: new Date(day.getTime() - DAY_MS) },
+      },
+      select: { startAt: true, endAt: true },
+    });
+
+    return computeSlots({
+      day,
+      durationMin: service.duration,
+      specialistSchedule: specialist.schedule as WeekScheduleInput | null,
+      locationHours: location.hours as WeekScheduleInput | null,
+      timeOff,
+      busy: activeBookings,
+      notBefore,
+    });
   }
 
   // ── Mutations ─────────────────────────────────────────────
