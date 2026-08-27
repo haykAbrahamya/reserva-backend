@@ -8,7 +8,7 @@ import {
   computeSlots,
   computeCapacitySlots,
   slotCountToDots,
-  openWindowForDate,
+  openRangesForDate,
 } from '@/common/utils/availability';
 import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
 import type {
@@ -435,7 +435,12 @@ function fmtLocalDay(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Whether a weekly schedule has an enabled window on the given day. */
+/**
+ * Whether a weekly schedule leaves the venue open at any point during the day.
+ * Uses the range helper rather than the raw window so a day that is only
+ * reachable through the PREVIOUS day's overnight shift (open 00:00–02:30
+ * because yesterday ran 18:00→02:30) is reported as open, not closed.
+ */
 function openOnDay(schedule: WeekScheduleInput | null | undefined, day: Date): boolean {
-  return openWindowForDate(schedule, day) != null;
+  return openRangesForDate(schedule, day).length > 0;
 }

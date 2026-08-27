@@ -3,7 +3,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import {
   intervalsOverlap,
-  openWindowForDate,
+  isWithinWorkingHours,
 } from '@/common/utils/availability';
 import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
 
@@ -40,23 +40,20 @@ export function assertBookingAllowed(
   }
 
   // 2. Within the specialist ∩ location working window for that weekday.
+  //    Minutes are measured from the START date's midnight, so `endMin` exceeds
+  //    1440 for an appointment running past midnight. `isWithinWorkingHours`
+  //    also considers the PREVIOUS day's shift, which is what makes a 01:00
+  //    booking belonging to a 18:00→02:30 overnight shift validate correctly.
   const sched = ctx.specialist.schedule as WeekScheduleInput | null;
   const hours = ctx.location.hours as WeekScheduleInput | null;
   const startMin = ctx.startAt.getHours() * 60 + ctx.startAt.getMinutes();
   const endMin = startMin + (ctx.endAt.getTime() - ctx.startAt.getTime()) / 60000;
 
-  const spWin = openWindowForDate(sched, ctx.startAt);
-  const locWin = openWindowForDate(hours, ctx.startAt);
-  const windows = [spWin, locWin].filter(Boolean) as { startMin: number; endMin: number }[];
-  if (windows.length > 0) {
-    const open = Math.max(...windows.map((w) => w.startMin));
-    const close = Math.min(...windows.map((w) => w.endMin));
-    if (startMin < open || endMin > close) {
-      throw AppException.badRequest(
-        ErrorCode.OUTSIDE_WORKING_HOURS,
-        'The selected time is outside working hours',
-      );
-    }
+  if (!isWithinWorkingHours(sched, hours, ctx.startAt, startMin, endMin)) {
+    throw AppException.badRequest(
+      ErrorCode.OUTSIDE_WORKING_HOURS,
+      'The selected time is outside working hours',
+    );
   }
 
   // 3. Not inside a time-off window.
