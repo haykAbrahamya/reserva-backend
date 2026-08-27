@@ -212,7 +212,14 @@ export class BookingsService {
 
     const booking = await this.runWithOverlapGuard<BookingWithRefs>(() =>
       this.prisma.$transaction(async (tx) => {
-        const client = await this.clients.upsertByPhone(partnerId, dto.clientName, dto.clientPhone, tx);
+        // No phone → no CRM client: phone is the per-partner client identity key,
+        // so there is nothing to key a row on, and inventing one would either
+        // collide on the unique index or pollute the client list. The booking
+        // still carries the client's NAME, so staff never lose who it's for.
+        const phone = dto.clientPhone.trim();
+        const client = phone
+          ? await this.clients.upsertByPhone(partnerId, dto.clientName, phone, tx)
+          : null;
         return tx.booking.create({
           data: {
             id: newId(),
@@ -220,9 +227,9 @@ export class BookingsService {
             locationId: dto.locationId,
             specialistId: dto.specialistId ?? null,
             serviceId: dto.serviceId,
-            clientId: client.id,
+            clientId: client?.id ?? null,
             clientName: dto.clientName,
-            clientPhone: client.phone,
+            clientPhone: client?.phone ?? '',
             startAt,
             endAt,
             status: dto.status,

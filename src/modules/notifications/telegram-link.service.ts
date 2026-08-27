@@ -27,6 +27,9 @@ export class TelegramLinkService {
       select: { id: true, clientId: true, client: { select: { telegramChatId: true } } },
     });
     if (!booking) throw AppException.notFound('Booking not found');
+    // A walk-in entered without a phone has no client row to bind a chat to.
+    // (Public bookings always have one — this only guards the nullable column.)
+    if (!booking.clientId) return null;
     // Already connected → no link needed.
     if (booking.client?.telegramChatId) return null;
 

@@ -88,10 +88,21 @@ export class ClientsService {
       }),
     ]);
 
-    const visitsById = new Map(visitGroups.map((g) => [g.clientId, g]));
+    // `Booking.clientId` is nullable (walk-ins booked without a phone), so the
+    // grouped rows are typed as possibly-null even though every query above
+    // filters on `clientId: { in: ids }`. Drop the impossible null group rather
+    // than asserting, so a future query change can't turn this into a bad key.
+    const visitsById = new Map(
+      visitGroups.flatMap((g) => (g.clientId ? [[g.clientId, g] as const] : [])),
+    );
     const spendById = new Map<string, number>();
-    for (const g of finalSpend) spendById.set(g.clientId, g._sum.finalPrice ?? 0);
-    for (const g of baseSpend) spendById.set(g.clientId, (spendById.get(g.clientId) ?? 0) + (g._sum.priceAtBooking ?? 0));
+    for (const g of finalSpend) {
+      if (g.clientId) spendById.set(g.clientId, g._sum.finalPrice ?? 0);
+    }
+    for (const g of baseSpend) {
+      if (!g.clientId) continue;
+      spendById.set(g.clientId, (spendById.get(g.clientId) ?? 0) + (g._sum.priceAtBooking ?? 0));
+    }
 
     const items = rows.map((c) => ({
       ...c,

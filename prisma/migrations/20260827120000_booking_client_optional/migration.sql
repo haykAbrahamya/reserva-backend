@@ -1,0 +1,12 @@
+-- Allow a booking to exist without a CRM client row.
+--
+-- Staff entering a walk-in from the backoffice may not have a phone number, and
+-- phone is the per-partner client identity key (`clients.@@unique(partnerId,
+-- phone)`) — so with no phone there is nothing to key a client row on. Such a
+-- booking keeps its `clientName` snapshot, stores `clientPhone` as '', and
+-- points at no client. Public bookings still require a phone and remain linked.
+--
+-- Additive + non-destructive: dropping NOT NULL widens what the column accepts,
+-- so every existing row stays valid and no data is touched. The foreign key and
+-- its ON DELETE RESTRICT behaviour are unchanged.
+ALTER TABLE "bookings" ALTER COLUMN "clientId" DROP NOT NULL;

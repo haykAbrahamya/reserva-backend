@@ -50,7 +50,25 @@ export const createBookingSchema = z.object({
   specialistId: z.string().uuid().nullable().optional(),
   serviceId: z.string().uuid(),
   clientName: z.string().trim().min(1).max(120),
-  clientPhone: z.string().trim().min(4).max(40),
+  /**
+   * OPTIONAL for backoffice bookings — staff frequently enter a walk-in with no
+   * phone to hand. Omitted or '' means "no phone on record": the booking keeps
+   * its `clientName` snapshot but is not linked to a CRM client, because phone is
+   * the per-partner client identity key. Anything non-empty must still look like
+   * a phone number, so a half-typed value can't be saved silently.
+   *
+   * The PUBLIC booking schema deliberately keeps this required — see
+   * `publicCreateBookingSchema`.
+   */
+  clientPhone: z
+    .string()
+    .trim()
+    .max(40)
+    .refine((v) => v === '' || v.length >= 4, {
+      message: 'Enter a valid phone number, or leave it empty',
+    })
+    .optional()
+    .default(''),
   /** Booking start; end is derived from the service duration. */
   startAt: z.coerce.date(),
   notes: z.string().trim().max(2000).optional(),

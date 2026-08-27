@@ -642,10 +642,16 @@ model Booking {
   /// Null for facility/entry services that aren't tied to a person (spa).
   specialistId String?
   serviceId    String
-  clientId     String
+  /// The CRM client this booking belongs to. NULL for a walk-in entered from the
+  /// backoffice without a phone number: phone is the per-partner client identity
+  /// key (`Client.@@unique([partnerId, phone])`), so a booking with no phone has
+  /// no client row to point at. Public bookings always require a phone and are
+  /// therefore always linked.
+  clientId     String?
 
   /// Snapshot of client contact at time of booking (client row may change).
   clientName  String
+  /// Empty string when a staff member booked a walk-in without a phone number.
   clientPhone String
 
   startAt DateTime
@@ -676,7 +682,7 @@ model Booking {
   location   Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
   specialist Specialist? @relation(fields: [specialistId], references: [id], onDelete: Restrict)
   service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  client     Client?    @relation(fields: [clientId], references: [id], onDelete: Restrict)
   pushSubscriptions ClientPushSubscription[]
 
   // Calendar/list queries are almost always tenant + time-window scoped.
