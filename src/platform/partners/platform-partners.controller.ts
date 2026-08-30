@@ -4,7 +4,8 @@ import { PlatformPartnersService } from './platform-partners.service';
 import { Public } from '@/auth/decorators';
 import { PlatformAuthGuard } from '../guards/platform-auth.guard';
 import { PlatformRolesGuard } from '../guards/platform-roles.guard';
-import { PlatformRoles } from '../platform.decorators';
+import { PlatformRoles, CurrentPlatformUser } from '../platform.decorators';
+import type { PlatformAuthUser } from '../platform.types';
 import { CreatePartnerDto, UpdatePartnerDto } from '@/modules/partners/dto/partner.dto';
 import {
   ListPlatformPartnersQueryDto,
@@ -69,8 +70,13 @@ export class PlatformPartnersController {
 
   @Patch(':id/courses')
   @ApiOperation({ summary: 'Enable/disable the Courses (academy) feature for a partner' })
-  setCourses(@Param('id') id: string, @Body() dto: SetPartnerCoursesDto) {
-    return this.partners.setCourses(id, dto.enabled);
+  setCourses(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: SetPartnerCoursesDto,
+  ) {
+    // The acting operator is recorded on the entitlement for audit.
+    return this.partners.setCourses(id, dto.enabled, user.id);
   }
 
   @Patch(':id/kind')

@@ -5,6 +5,7 @@ import { resolve, join } from 'node:path';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
+import { ProductsService } from '@/modules/products/products.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
@@ -41,6 +42,7 @@ export class PlatformPartnersService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly config: ConfigService,
+    private readonly products: ProductsService,
   ) {}
 
   async list(q: ListPlatformPartnersQueryDto) {
@@ -261,10 +263,23 @@ export class PlatformPartnersService {
     return this.get(id);
   }
 
-  /** Platform-curated: turn the Courses (academy) feature on/off for a partner. */
-  async setCourses(id: string, enabled: boolean) {
+  /**
+   * Platform-curated: turn the Courses (academy) feature on/off for a partner.
+   *
+   * DUAL-WRITE during the entitlements migration: `coursesEnabled` remains the
+   * column the application reads, while the same decision is mirrored into
+   * `partner_products`. Writing both from this one place is what keeps the
+   * column and the table from drifting before reads are cut over. When they are,
+   * the column write is the line to delete.
+   */
+  async setCourses(id: string, enabled: boolean, actingUserId?: string) {
     await this.assertExists(id);
     await this.prisma.partner.update({ where: { id }, data: { coursesEnabled: enabled } });
+    if (enabled) {
+      await this.products.enable(id, 'courses', { enabledById: actingUserId ?? null });
+    } else {
+      await this.products.disable(id, 'courses');
+    }
     return this.get(id);
   }
 

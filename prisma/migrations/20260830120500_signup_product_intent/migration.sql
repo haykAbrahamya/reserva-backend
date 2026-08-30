@@ -1,0 +1,11 @@
+-- Record which product a visitor signed up FOR.
+--
+-- The entry point they came through sets it (reserva.am -> 'bookings',
+-- vacancies.reserva.am -> 'vacancies'). Activation then grants exactly that
+-- entitlement instead of falling through to a default, and the post-activation
+-- landing page can send them to the right product.
+--
+-- SAFETY: additive. The column is NOT NULL with DEFAULT 'bookings', so every
+-- existing pending row is backfilled atomically with the behaviour it already
+-- had, and older application code that never sets the column keeps working.
+ALTER TABLE "pending_registrations" ADD COLUMN "product" TEXT NOT NULL DEFAULT 'bookings';

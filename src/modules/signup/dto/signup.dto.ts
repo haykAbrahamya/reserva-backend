@@ -27,6 +27,19 @@ export const signupSchema = z.object({
   adminEmail: z.string().email(),
   adminPhone: phone,
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  /**
+   * Which product they are signing up FOR, set by the entry point (the vacancies
+   * site posts `vacancies`). Intent, NOT an instruction: the server validates it
+   * against the catalog's self-serve flag, so this cannot be used to grant a
+   * curated product. Omitted → `bookings`, preserving today's behaviour.
+   */
+  product: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z][a-z0-9-]*$/, 'Invalid product key')
+    .optional(),
 });
 export class SignupDto extends createZodDto(signupSchema) {}
 

@@ -10,6 +10,8 @@ import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import type { AuthUser, JwtPayload } from './auth.types';
+import { ProductsService } from '@/modules/products/products.service';
+import type { PartnerProductView } from '@/modules/products/products.service';
 
 interface Tokens {
   accessToken: string;
@@ -31,6 +33,16 @@ export interface PublicUser {
   mustChangePassword: boolean;
 }
 
+/**
+ * `/auth/me` — the authenticated user plus the products their organization may
+ * currently use. Additive: `PublicUser` is unchanged, so the login response and
+ * every existing client keep working. Frontends read `products` to decide which
+ * navigation to render once they are ready to.
+ */
+export interface MeResponse extends PublicUser {
+  products: PartnerProductView[];
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -38,6 +50,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly passwords: PasswordService,
+    private readonly products: ProductsService,
   ) {}
 
   // ── Public API ────────────────────────────────────────────
@@ -101,10 +114,11 @@ export class AuthService {
     });
   }
 
-  async me(userId: string): Promise<PublicUser> {
+  async me(userId: string): Promise<MeResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw AppException.notFound('User not found');
-    return toPublicUser(user);
+    const products = await this.products.listFor(user.partnerId);
+    return { ...toPublicUser(user), products };
   }
 
   async changePassword(userId: string, current: string, next: string): Promise<void> {

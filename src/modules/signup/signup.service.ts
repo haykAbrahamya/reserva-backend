@@ -11,6 +11,7 @@ import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import type { SignupDto } from './dto/signup.dto';
+import { ProductsService } from '@/modules/products/products.service';
 
 const TOKEN_TTL_HOURS = 24;
 
@@ -34,6 +35,7 @@ export class SignupService {
     private readonly auth: AuthService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly products: ProductsService,
   ) {}
 
   /**
@@ -46,6 +48,11 @@ export class SignupService {
     const slug = dto.slug ? dto.slug.toLowerCase() : '';
     const email = dto.adminEmail.toLowerCase();
     const phone = normalizePhone(dto.adminPhone);
+
+    // Intent is validated against the catalog, never trusted from the client:
+    // an anonymous caller must not be able to grant itself a curated product.
+    const product = dto.product ?? 'bookings';
+    await this.products.assertSelfServe(product);
 
     // Validate duplicates UP FRONT so the form shows the error (not at activation).
     if (slug) await this.assertSlugFree(slug);
@@ -69,6 +76,7 @@ export class SignupService {
         companyName: dto.companyName,
         companyType: dto.companyType,
         kind: dto.kind ?? 'salon',
+        product,
         slug,
         accent: dto.accent,
         adminName: dto.adminName,
@@ -172,11 +180,20 @@ export class SignupService {
         },
       });
 
-      // A `single` (solo professional) needs the booking engine to work out of
+      // Grant exactly the product they signed up for — never a default. Same
+      // transaction as the partner + admin, so a partner can never exist without
+      // the entitlement it was created for.
+      await this.products.grantWithin(tx, partnerId, pending.product);
+
+      // A `single` (solo professional) needs the BOOKING engine to work out of
       // the box, so auto-provision one location + one specialist (the person
       // themselves). These are presented as "Your address" / "Your hours" in the
       // backoffice and never shown as a team/branch list.
-      if (pending.kind === 'single') {
+      //
+      // Gated on the booking product: a solo pro who signed up for vacancies has
+      // no use for a location or a bookable specialist, and creating them would
+      // make every organization carry booking data it never asked for.
+      if (pending.kind === 'single' && pending.product === 'bookings') {
         const locationId = newId();
         await tx.location.create({
           data: { id: locationId, partnerId, name: pending.companyName, address: '', phone: pending.adminPhone },

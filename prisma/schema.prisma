@@ -207,11 +207,92 @@ model Partner {
   courseCohorts CourseCohort[]
   courseEnrollments CourseEnrollment[]
   supportThread SupportThread?
+  products      PartnerProduct[]
 
   @@index([active])
   // Marketplace listing query: active, listed salons.
   @@index([marketplaceListed, active])
   @@map("partners")
+}
+
+// ── Products (ecosystem entitlements) ───────────────────────
+// Reserva is several products sharing one Partner (booking, courses, and later
+// vacancies / seminars). Which products an organization may use is a row per
+// partner × product rather than a boolean column per product, so a grant can
+// carry its own lifecycle — status, plan, trial window, who turned it on — and
+// so adding a product never means adding a column.
+//
+// NOTE the distinction from `Partner.bookingsEnabled`: that is a SETTING inside
+// the booking product ("contact-only mode", toggled by the partner themselves),
+// not an entitlement. `Partner.coursesEnabled` IS an entitlement (staff-granted)
+// and is mirrored here.
+
+/// Catalog of products in the ecosystem. Seeded, and extended by INSERT rather
+/// than by migration — adding `vacancies` is a row, not a schema change.
+model Product {
+  /// Stable machine key used in code, guards and API payloads (e.g. 'booking').
+  key         String  @id
+  name        String
+  description String  @default("")
+
+  /// Whether a partner may take this product on themselves (signup / settings).
+  /// Curated products stay false and are granted by platform staff only.
+  selfServe Boolean @default(false)
+
+  /// Display order in navigation and product switchers.
+  sortOrder Int     @default(0)
+  /// Lets a product be built and seeded before it is offered to anyone.
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grants PartnerProduct[]
+
+  @@map("products")
+}
+
+/// Lifecycle of a single partner's access to a single product.
+enum PartnerProductStatus {
+  active
+  trialing
+  /// Retained (settings and history intact) but access is refused.
+  suspended
+}
+
+/// One organization's grant of one product.
+model PartnerProduct {
+  id         String @id
+  partnerId  String
+  productKey String
+
+  status      PartnerProductStatus @default(active)
+  /// Tier within the product; null = default tier.
+  plan        String?
+  trialEndsAt DateTime?
+
+  /// Per-product configuration, so a new product adds no columns to Partner.
+  settings Json @default("{}")
+
+  /// Audit — the platform/partner user who granted it. Null for automated
+  /// grants (signup, backfill).
+  enabledById String?
+  enabledAt   DateTime  @default(now())
+  /// Set when access is withdrawn; the row is kept so history and settings
+  /// survive a later re-enable.
+  disabledAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Restrict: a product still granted to someone must not vanish from the catalog.
+  product Product @relation(fields: [productKey], references: [key], onDelete: Restrict)
+
+  @@unique([partnerId, productKey])
+  // "Which partners use vacancies?" — the internal console's core query.
+  @@index([productKey, status])
+  @@map("partner_products")
 }
 
 /// Public-facing marketing fields for the branded booking page. Split from
@@ -887,6 +968,12 @@ model PendingRegistration {
   slug        String
   accent      String
   kind        PartnerKind @default(salon)
+
+  /// Which product the visitor signed up FOR — set by the entry point they came
+  /// through (reserva.am -> bookings, vacancies.reserva.am -> vacancies). Drives
+  /// which entitlement is granted on activation and where they land afterwards.
+  /// Defaults to `bookings` so existing signup links behave exactly as before.
+  product     String @default("bookings")
 
   // Admin details
   adminName    String

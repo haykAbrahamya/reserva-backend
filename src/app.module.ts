@@ -12,11 +12,13 @@ import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { ProductGuard } from './auth/guards/product.guard';
 
 import { PartnersModule } from './modules/partners/partners.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { ServicesModule } from './modules/services/services.module';
 import { CoursesModule } from './modules/courses/courses.module';
+import { ProductsModule } from './modules/products/products.module';
 import { SpecialistsModule } from './modules/specialists/specialists.module';
 import { SpecialistReviewsModule } from './modules/specialist-reviews/specialist-reviews.module';
 import { ClientsModule } from './modules/clients/clients.module';
@@ -57,6 +59,7 @@ import { HealthController } from './health.controller';
     }),
     PrismaModule,
     MailModule,
+    ProductsModule,
     AuthModule,
     PartnersModule,
     LocationsModule,
@@ -83,6 +86,7 @@ import { HealthController } from './health.controller';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ProductGuard },
   ],
 })
 export class AppModule {}

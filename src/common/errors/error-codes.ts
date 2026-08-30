@@ -25,6 +25,12 @@ export enum ErrorCode {
   PHONE_TAKEN = 'PHONE_TAKEN',
   LOCATION_HAS_SPECIALISTS = 'LOCATION_HAS_SPECIALISTS',
 
+  // Domain — products / entitlements
+  /// The organization does not have access to the requested product.
+  PRODUCT_NOT_ENABLED = 'PRODUCT_NOT_ENABLED',
+  /// The product key is not in the catalog (or is not offered self-serve).
+  UNKNOWN_PRODUCT = 'UNKNOWN_PRODUCT',
+
   // Domain — courses
   COURSE_FULL = 'COURSE_FULL',
   ENROLLMENT_CLOSED = 'ENROLLMENT_CLOSED',
