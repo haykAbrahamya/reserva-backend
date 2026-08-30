@@ -185,30 +185,35 @@ export class SignupService {
       // the entitlement it was created for.
       await this.products.grantWithin(tx, partnerId, pending.product);
 
-      // A `single` (solo professional) needs the BOOKING engine to work out of
-      // the box, so auto-provision one location + one specialist (the person
-      // themselves). These are presented as "Your address" / "Your hours" in the
-      // backoffice and never shown as a team/branch list.
-      //
-      // Gated on the booking product: a solo pro who signed up for vacancies has
-      // no use for a location or a bookable specialist, and creating them would
-      // make every organization carry booking data it never asked for.
-      if (pending.kind === 'single' && pending.product === 'bookings') {
+      // A `single` (solo professional) gets their one address provisioned
+      // regardless of product. Location is ORGANIZATION-level, not a booking
+      // concept — bookings, course runs and vacancies all anchor to it, and a
+      // chair being advertised needs an address more than anything else does.
+      // It is presented as "Your address" in the backoffice, never as a branch
+      // list. No product may be a prerequisite for another.
+      if (pending.kind === 'single') {
         const locationId = newId();
         await tx.location.create({
           data: { id: locationId, partnerId, name: pending.companyName, address: '', phone: pending.adminPhone },
         });
-        await tx.specialist.create({
-          data: {
-            id: newId(),
-            partnerId,
-            locationId,
-            name: pending.adminName,
-            title: pending.companyType,
-            phone: pending.adminPhone,
-            schedule: SOLO_DEFAULT_SCHEDULE,
-          },
-        });
+
+        // The bookable Specialist, on the other hand, IS booking-specific: it
+        // carries a schedule and exists to be reserved. A solo pro who signed
+        // up for vacancies has nothing to book, so creating one would leave
+        // every organization carrying booking data it never asked for.
+        if (pending.product === 'bookings') {
+          await tx.specialist.create({
+            data: {
+              id: newId(),
+              partnerId,
+              locationId,
+              name: pending.adminName,
+              title: pending.companyType,
+              phone: pending.adminPhone,
+              schedule: SOLO_DEFAULT_SCHEDULE,
+            },
+          });
+        }
       }
 
       await tx.pendingRegistration.update({

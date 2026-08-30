@@ -33,7 +33,8 @@ describe('product keys', () => {
   it('narrows known keys and rejects unknown ones', () => {
     expect(isProductKey('bookings')).toBe(true);
     expect(isProductKey('courses')).toBe(true);
-    expect(isProductKey('vacancies')).toBe(false); // not implemented in code yet
+    expect(isProductKey('vacancies')).toBe(true);
+    expect(isProductKey('seminars')).toBe(false); // seedable, but no code knows it yet
     expect(isProductKey('')).toBe(false);
   });
 
@@ -146,8 +147,8 @@ describe('ProductsService.assertSelfServe — the signup boundary', () => {
   });
 
   it('refuses an inactive product', async () => {
-    const svc = withProduct({ key: 'vacancies', active: false, selfServe: true });
-    await expect(svc.assertSelfServe('vacancies')).rejects.toMatchObject({
+    const svc = withProduct({ key: 'seminars', active: false, selfServe: true });
+    await expect(svc.assertSelfServe('seminars')).rejects.toMatchObject({
       code: ErrorCode.UNKNOWN_PRODUCT,
     });
   });

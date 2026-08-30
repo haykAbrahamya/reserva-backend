@@ -26,17 +26,23 @@ export class PartnersService {
    * its own endpoints, so this stays a lean, cacheable read.
    */
   async getOwn(partnerId: string) {
-    const partner = await this.prisma.partner.findFirst({
-      where: { id: partnerId, deletedAt: null },
-      include: {
-        presentation: true,
-        // Lightweight count so global chrome (sidebar) needs no catalog fetch.
-        _count: { select: { locations: { where: { deletedAt: null } } } },
-      },
-    });
+    const [partner, products] = await Promise.all([
+      this.prisma.partner.findFirst({
+        where: { id: partnerId, deletedAt: null },
+        include: {
+          presentation: true,
+          // Lightweight count so global chrome (sidebar) needs no catalog fetch.
+          _count: { select: { locations: { where: { deletedAt: null } } } },
+        },
+      }),
+      // The granted products ride along with the profile the shell already
+      // loads on boot, so the navigation knows which products exist before it
+      // paints — no second round trip, and no flash of the wrong sections.
+      this.products.listFor(partnerId),
+    ]);
     if (!partner) throw AppException.notFound('Partner not found');
     const { _count, ...rest } = partner;
-    return { ...rest, locationCount: _count.locations };
+    return { ...rest, locationCount: _count.locations, products };
   }
 
   /**

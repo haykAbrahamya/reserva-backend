@@ -132,19 +132,19 @@ enum EnrollmentStatus {
 // ── Partner (tenant) ────────────────────────────────────────
 
 model Partner {
-  id   String @id
+  id       String  @id
   /// Public URL handle: slug.reserva.am / reserva.am/p/:slug. Optional — a
   /// partner can be created without one (then the public page 404s until the
   /// owner sets a slug in Settings). Unique when present (Postgres allows
   /// multiple NULLs under a unique index).
-  slug String? @unique
-  name String
+  slug     String? @unique
+  name     String
   /// Optional per-language overrides for `name`, shape { hy?, en?, ru? }. Null /
   /// missing locale → falls back to `name` (the base value stays source of
   /// truth for search/sort/emails). Additive: existing rows keep behaving as today.
   nameI18n Json?
   /// Free-text category shown publicly, e.g. "Aesthetic clinic".
-  type String
+  type     String
   /// Optional per-language overrides for `type` (the public category chip),
   /// shape { hy?, en?, ru? }. Null / missing locale → falls back to `type`.
   /// Additive: existing rows keep behaving as today.
@@ -196,18 +196,19 @@ model Partner {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  presentation PartnerPresentation?
-  locations    Location[]
-  services     Service[]
-  specialists  Specialist[]
-  bookings     Booking[]
-  clients      Client[]
-  users        User[]
-  courses      Course[]
-  courseCohorts CourseCohort[]
+  presentation      PartnerPresentation?
+  locations         Location[]
+  services          Service[]
+  specialists       Specialist[]
+  bookings          Booking[]
+  clients           Client[]
+  users             User[]
+  courses           Course[]
+  courseCohorts     CourseCohort[]
   courseEnrollments CourseEnrollment[]
-  supportThread SupportThread?
-  products      PartnerProduct[]
+  supportThread     SupportThread?
+  vacancies         Vacancy[]
+  products          PartnerProduct[]
 
   @@index([active])
   // Marketplace listing query: active, listed salons.
@@ -231,9 +232,9 @@ model Partner {
 /// than by migration — adding `vacancies` is a row, not a schema change.
 model Product {
   /// Stable machine key used in code, guards and API payloads (e.g. 'booking').
-  key         String  @id
+  key         String @id
   name        String
-  description String  @default("")
+  description String @default("")
 
   /// Whether a partner may take this product on themselves (signup / settings).
   /// Curated products stay false and are granted by platform staff only.
@@ -295,35 +296,96 @@ model PartnerProduct {
   @@map("partner_products")
 }
 
+// ── Specialty taxonomy (platform catalog) ───────────────────
+
+/// Top-level bucket for specialties ("Hair", "Nails", "Medical"). Exists so the
+/// console and the public filters can group ~50 specialties into something a
+/// human can scan. Platform-owned: partners pick from it, never edit it.
+model SpecialtyGroup {
+  key      String @id
+  /// English name — the source of truth for search/sort.
+  name     String
+  /// Per-language names, shape { hy, ru }. Unlike partner-authored content
+  /// (where i18n is an optional override), a platform catalog is rendered to
+  /// every user in their own language, so translations are NOT optional here.
+  nameI18n Json
+
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specialties Specialty[]
+
+  @@index([active, sortOrder])
+  @@map("specialty_groups")
+}
+
+/// One field of work, carrying BOTH names it is known by:
+///   `name`     — the craft        ("Hair styling") -> service categories, filters
+///   `roleName` — the practitioner ("Hair stylist") -> vacancies, specialist titles
+/// One row therefore serves every product without the vocabulary being retyped
+/// per partner, which is what makes cross-product search possible at all.
+model Specialty {
+  key      String @id
+  groupKey String
+
+  name         String
+  nameI18n     Json
+  roleName     String
+  roleNameI18n Json
+
+  /// Search-only synonyms across every language, lowercased ("hairdresser",
+  /// "парикмахер", "վարսահարդար"). Never rendered — they exist so someone
+  /// typing the word they know lands on the right row.
+  aliases String[] @default([])
+
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Restrict: a specialty in use must not vanish from the catalog and orphan
+  /// live listings — the same rule as Product <- PartnerProduct.
+  group     SpecialtyGroup @relation(fields: [groupKey], references: [key], onDelete: Restrict)
+  vacancies Vacancy[]
+
+  @@index([groupKey, sortOrder])
+  @@index([active, sortOrder])
+  @@map("specialties")
+}
+
 /// Public-facing marketing fields for the branded booking page. Split from
 /// Partner so the hot tenant row stays lean and these rarely-changing,
 /// publicly-served fields can be cached/served independently.
 model PartnerPresentation {
-  partnerId String  @id
-  tagline   String  @default("")
+  partnerId   String  @id
+  tagline     String  @default("")
   /// Optional per-language overrides for `tagline`, shape { hy?, en?, ru? }.
   taglineI18n Json?
-  about     String  @default("")
+  about       String  @default("")
   /// Optional per-language overrides for `about` (same shape/fallback rules).
-  aboutI18n Json?
+  aboutI18n   Json?
   /// Optional brand logo URL. Shown instead of the name initial where set.
-  logoUrl   String  @default("")
-  hours     String  @default("") // human-readable summary, e.g. "Mon–Sat · 10:00–19:00"
+  logoUrl     String  @default("")
+  hours       String  @default("") // human-readable summary, e.g. "Mon–Sat · 10:00–19:00"
   /// Public social links (full URLs). Empty = not shown on the booking page.
-  instagram String  @default("")
-  facebook  String  @default("")
+  instagram   String  @default("")
+  facebook    String  @default("")
   /// WhatsApp number in international digits (e.g. "37491234567"), used to build
   /// a wa.me click-to-chat link on the public page. Empty = not shown.
-  whatsapp  String  @default("")
-  rating    Decimal @default(0) @db.Decimal(2, 1)
-  reviews   Int     @default(0)
+  whatsapp    String  @default("")
+  rating      Decimal @default(0) @db.Decimal(2, 1)
+  reviews     Int     @default(0)
   /// Hero gradient tints [from, to] + decorative gallery tiles, stored as JSON
   /// since they're presentation-only and read as a blob.
-  heroTints Json    @default("[]")
+  heroTints   Json    @default("[]")
   /// "Inside" gallery — simple photos of the place. JSON array of tiles.
-  gallery   Json    @default("[]")
+  gallery     Json    @default("[]")
   /// "Works" — photos of the work done; tiles may be simple or before/after.
-  works     Json    @default("[]")
+  works       Json    @default("[]")
 
   updatedAt DateTime @updatedAt
 
@@ -348,8 +410,8 @@ model Location {
 
   /// Geo coordinates from the map picker (null until set). Powers map display,
   /// directions, and future "near me" / distance sort on the marketplace.
-  lat       Float?
-  lng       Float?
+  lat Float?
+  lng Float?
 
   /// Weekly opening hours: { mon: { enabled, start, end }, ... }. JSON because
   /// it's always read/written as a whole and never queried by inner fields.
@@ -359,11 +421,12 @@ model Location {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner     Partner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  specialists Specialist[]
-  bookings    Booking[]
-  users       User[]
+  partner       Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  specialists   Specialist[]
+  bookings      Booking[]
+  users         User[]
   courseCohorts CourseCohort[]
+  vacancies     Vacancy[]
 
   @@index([partnerId, deletedAt])
   @@map("locations")
@@ -372,28 +435,28 @@ model Location {
 // ── Service ─────────────────────────────────────────────────
 
 model Service {
-  id        String  @id
-  partnerId String
-  name      String
+  id              String           @id
+  partnerId       String
+  name            String
   /// Optional per-language overrides for `name`, shape { hy?, en?, ru? }. Null /
   /// missing locale → falls back to `name` (the base value stays source of
   /// truth for search/sort). Additive: existing rows keep behaving as today.
-  nameI18n  Json?
-  category  String  @default("")
+  nameI18n        Json?
+  category        String           @default("")
   /// Optional per-language overrides for `category` (same shape/fallback rules).
-  categoryI18n Json?
+  categoryI18n    Json?
   /// Whether `price` is an exact amount or the low end of a range. A `range`
   /// service quotes `price`–`priceMax` publicly, and its exact charge is captured
   /// per booking on completion (Booking.finalPrice).
-  priceType ServicePriceType @default(fixed)
+  priceType       ServicePriceType @default(fixed)
   /// Stored in the smallest currency unit (AMD has no minor unit → whole drams).
   /// For a range service this is the LOWER bound (kept as `price` so existing
   /// reads treat it as a sensible baseline).
-  price     Int
+  price           Int
   /// Upper bound for a range service; null for fixed-price services.
-  priceMax  Int?
+  priceMax        Int?
   /// Duration in minutes.
-  duration  Int
+  duration        Int
   /// How often this service should be repeated, in TOTAL DAYS (e.g. 40 = "1
   /// month & 10 days"). Null = no recurrence. Foundation for future "time to
   /// rebook" reminders. Backoffice-only; never shown on the public page.
@@ -405,9 +468,9 @@ model Service {
   requiresSpecialist Boolean @default(true)
   /// Max concurrent bookings per time slot for a no-specialist service. Ignored
   /// when requiresSpecialist = true.
-  capacity Int @default(1)
+  capacity           Int     @default(1)
 
-  active    Boolean @default(true)
+  active Boolean @default(true)
 
   /// Manual display order (0-based) within a partner's service list. Drives both
   /// the backoffice list and the public page so they always agree. Set by the
@@ -418,9 +481,9 @@ model Service {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner          Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  specialistLinks  SpecialistService[]
-  bookings         Booking[]
+  partner         Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  specialistLinks SpecialistService[]
+  bookings        Booking[]
 
   @@index([partnerId, deletedAt])
   @@index([partnerId, active])
@@ -441,20 +504,20 @@ model Course {
   partnerId String
 
   /// Course title (base value = source of truth for search/sort).
-  title     String
+  title           String
   /// Optional per-language overrides for `title`, shape { hy?, en?, ru? }.
-  titleI18n Json?
+  titleI18n       Json?
   /// One-line teaser shown on the public card.
-  summary   String @default("")
+  summary         String @default("")
   /// Optional per-language overrides for `summary`.
-  summaryI18n Json?
+  summaryI18n     Json?
   /// Long-form description / curriculum (what you'll learn).
-  description String @default("")
+  description     String @default("")
   /// Optional per-language overrides for `description`.
   descriptionI18n Json?
 
   /// Cover image URL (WebP under <uploads>/<partnerId>/). Empty = gradient placeholder.
-  coverUrl  String @default("")
+  coverUrl String @default("")
 
   /// How the price is presented publicly (see CoursePriceMode). `paid` shows
   /// `price`; `free` shows "Free"; `hidden` shows nothing. Defaults to `paid`
@@ -463,7 +526,7 @@ model Course {
   priceMode CoursePriceMode @default(paid)
   /// Price in the smallest currency unit (whole AMD). Only meaningful when
   /// priceMode = paid; forced to 0 for free/hidden.
-  price     Int    @default(0)
+  price     Int             @default(0)
 
   /// Optional tutor. EITHER a link to one of the salon's specialists (reuses
   /// their name/photo) OR free-text for a guest instructor — never both required.
@@ -472,19 +535,19 @@ model Course {
   tutorTitle        String  @default("")
 
   /// Optional difficulty badge.
-  level     CourseLevel?
+  level CourseLevel?
 
   /// Public visibility. When false the course is a draft (hidden from /p/:slug).
-  active    Boolean @default(true)
+  active Boolean @default(true)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner        Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partner         Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   /// Tutor link is optional and must not orphan on specialist delete → SetNull.
-  tutorSpecialist Specialist?   @relation("CourseTutor", fields: [tutorSpecialistId], references: [id], onDelete: SetNull)
-  cohorts        CourseCohort[]
+  tutorSpecialist Specialist?    @relation("CourseTutor", fields: [tutorSpecialistId], references: [id], onDelete: SetNull)
+  cohorts         CourseCohort[]
 
   @@index([partnerId, deletedAt])
   @@index([partnerId, active])
@@ -502,17 +565,17 @@ model CourseCohort {
   locationId String?
 
   /// Optional fixed dates (group courses). Null = rolling/undated.
-  startDate DateTime?
-  endDate   DateTime?
+  startDate    DateTime?
+  endDate      DateTime?
   /// Free-text schedule, e.g. "Tue & Thu · 18:00–20:00". Schedules are irregular
   /// enough that structured slots aren't worth it here.
-  scheduleText String @default("")
+  scheduleText String    @default("")
 
   /// Max confirmed members. 0 = unlimited.
-  capacity  Int          @default(0)
-  status    CohortStatus @default(open)
+  capacity         Int          @default(0)
+  status           CohortStatus @default(open)
   /// Whether self-registration from the public page is accepted for this run.
-  registrationOpen Boolean @default(true)
+  registrationOpen Boolean      @default(true)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -546,9 +609,9 @@ model CourseEnrollment {
   notes  String?
 
   /// Price captured at enrollment time (course price may change later).
-  priceAtEnroll Int @default(0)
+  priceAtEnroll Int     @default(0)
   /// UI language the member registered in ('en' | 'hy' | 'ru'); null for staff adds.
-  locale String?
+  locale        String?
 
   createdById String?
   createdAt   DateTime @default(now())
@@ -563,6 +626,152 @@ model CourseEnrollment {
   @@index([partnerId, status])
   @@index([cohortId, status])
   @@map("course_enrollments")
+}
+
+// ── Vacancies ───────────────────────────────────────────────
+
+/// How a position pays. This industry runs on three arrangements that are
+/// structurally different relationships, not variations of a salary:
+///  - percentage: the salon keeps a share of what the master earns
+///  - rent:       the master pays the salon a fixed amount for a "chair", so
+///                the money flows the OTHER way round
+///  - salary:     ordinary employment
+///  - negotiable: real terms exist but are not published ("by agreement"),
+///                which is a stated position here rather than a blank field
+enum VacancyPayType {
+  percentage
+  rent
+  salary
+  negotiable
+}
+
+/// Billing period for `amount` — chair rent is sometimes daily, salary monthly.
+enum VacancyPayPeriod {
+  day
+  week
+  month
+}
+
+enum VacancyScheduleType {
+  full_time
+  part_time
+  shift
+  flexible
+}
+
+/// Deliberately coarse: real listings say "with experience", never "3 years".
+enum VacancyExperience {
+  any
+  junior
+  experienced
+}
+
+/// How candidates reach the salon. `phone` matters as much as `in_app` — most
+/// hiring in this market still starts with a call, and a listing that can only
+/// be answered in-app is a listing many salons simply will not post.
+enum VacancyApplyMode {
+  in_app
+  phone
+  both
+}
+
+/// draft -> published <-> paused -> closed. `expired` is set when `expiresAt`
+/// passes, so the board never quietly advertises positions already filled.
+enum VacancyStatus {
+  draft
+  published
+  paused
+  closed
+  expired
+}
+
+/// Platform moderation. Everything is approved on create today; the column
+/// exists from day one because retrofitting moderation onto a live public board
+/// means backfilling thousands of undecided rows.
+enum VacancyReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+model Vacancy {
+  id         String @id
+  partnerId  String
+  /// Non-null on purpose: a position with no address cannot be listed, filtered
+  /// by city or put on a map. Location is organization-level (already shared by
+  /// bookings and courses), so this holds even for a partner whose ONLY product
+  /// is vacancies.
+  locationId String
+
+  specialtyKey String
+  /// Listing headline. Required when specialtyKey = 'other'; otherwise optional
+  /// and falls back to the specialty's localized role name.
+  title        String @default("")
+  titleI18n    Json?
+
+  description     String @default("")
+  descriptionI18n Json?
+
+  /// Optional cover image (WebP under <uploads>/<partnerId>/). Empty = gradient.
+  coverUrl String @default("")
+  /// How many people are wanted — stops the same listing being posted twice.
+  seats    Int    @default(1)
+
+  // ── Terms ──
+  payType         VacancyPayType   @default(negotiable)
+  /// The share the SALON keeps, 0-100. Named for the salon rather than the
+  /// master so "60/40" can never be read the wrong way round anywhere.
+  salonPercent    Int?
+  /// Upper bound when the split depends on experience ("40-50%").
+  salonPercentMax Int?
+  /// Whole AMD (no minor unit), same convention as Service.price. Rent OR salary.
+  amount          Int?
+  amountMax       Int?
+  payPeriod       VacancyPayPeriod @default(month)
+  currency        String           @default("AMD")
+
+  // ── The work ──
+  scheduleType VacancyScheduleType?
+  scheduleNote String               @default("")
+  experience   VacancyExperience    @default(any)
+  /// Perk keys from the shared vocabulary ("materials-included",
+  /// "own-client-base"). A key list keeps them translatable and filterable
+  /// without a join table for something only ever read as a whole.
+  perks        String[]             @default([])
+
+  // ── Contact ──
+  applyMode    VacancyApplyMode @default(both)
+  contactPhone String           @default("")
+
+  // ── Lifecycle ──
+  status       VacancyStatus       @default(draft)
+  reviewStatus VacancyReviewStatus @default(approved)
+  publishedAt  DateTime?
+  /// Listings auto-expire so the board never shows filled positions; renewed
+  /// with one click from the backoffice.
+  expiresAt    DateTime?
+  closedAt     DateTime?
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// Soft delete, matching Location/Service/Specialist — removing a listing must
+  /// not erase the record that someone applied to it.
+  deletedAt   DateTime?
+
+  partner   Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Restrict: deleting a branch that still advertises positions would strand
+  /// them with no address.
+  location  Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  specialty Specialty @relation(fields: [specialtyKey], references: [key], onDelete: Restrict)
+
+  /// The backoffice list — this partner's listings by state.
+  @@index([partnerId, deletedAt, status])
+  /// The public board — "published colorist positions", newest first.
+  @@index([status, deletedAt, publishedAt])
+  @@index([specialtyKey, status])
+  @@index([locationId])
+  @@map("vacancies")
 }
 
 // ── Specialist ──────────────────────────────────────────────
@@ -590,14 +799,14 @@ model Specialist {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner   Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  location  Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  services  SpecialistService[]
-  timeOff   SpecialistTimeOff[]
-  bookings  Booking[]
-  reviews   SpecialistReview[]
+  partner        Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location       Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  services       SpecialistService[]
+  timeOff        SpecialistTimeOff[]
+  bookings       Booking[]
+  reviews        SpecialistReview[]
   /// Courses where this specialist is credited as the tutor (optional link).
-  tutoredCourses Course[]       @relation("CourseTutor")
+  tutoredCourses Course[]            @relation("CourseTutor")
 
   @@index([partnerId, deletedAt])
   @@index([locationId, active])
@@ -610,15 +819,15 @@ model Specialist {
 /// ones from the backoffice. Ratings shown in the client app are computed
 /// averages of these rows (never fabricated).
 model SpecialistReview {
-  id           String   @id
+  id           String @id
   specialistId String
   partnerId    String // denormalized for fast tenant-scoped queries
   /// Reviewer's display name; empty → rendered as "Anonymous".
-  author       String   @default("")
+  author       String @default("")
   /// 1–5 stars (enforced in the DTO).
   rating       Int
   /// Optional free-text comment.
-  text         String   @default("")
+  text         String @default("")
 
   createdAt DateTime @default(now())
 
@@ -698,14 +907,14 @@ model Client {
 /// customer presses Start on the bot (the token rides in the /start payload).
 model TelegramLink {
   /// The opaque token embedded in the t.me/<bot>?start=<token> deep link.
-  token     String   @id
-  clientId  String
+  token      String    @id
+  clientId   String
   /// The booking this link was generated from (for the welcome message context).
-  bookingId String?
-  expiresAt DateTime
+  bookingId  String?
+  expiresAt  DateTime
   /// Set when the customer completes the /start bind — makes the token single-use.
   consumedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -717,7 +926,7 @@ model TelegramLink {
 // ── Booking ─────────────────────────────────────────────────
 
 model Booking {
-  id           String        @id
+  id           String  @id
   partnerId    String
   locationId   String
   /// Null for facility/entry services that aren't tied to a person (spa).
@@ -743,27 +952,27 @@ model Booking {
 
   /// UI language the customer booked in ('en' | 'hy' | 'ru'). Used to localize
   /// reminder/confirmation messages later. Null for older/backoffice bookings.
-  locale  String?
+  locale String?
 
   /// Price captured at booking time (service price may change later). For a
   /// range service this is the range's LOWER bound at booking time.
-  priceAtBooking Int @default(0)
+  priceAtBooking    Int  @default(0)
   /// Upper bound captured at booking time for a range service; null for fixed.
   priceMaxAtBooking Int?
   /// Exact amount charged, entered when a range-priced booking is completed.
   /// Null for fixed-price bookings (their price is exact) or until captured.
   /// Revenue uses `finalPrice ?? priceAtBooking`.
-  finalPrice Int?
+  finalPrice        Int?
 
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  partner    Partner    @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  location   Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  specialist Specialist? @relation(fields: [specialistId], references: [id], onDelete: Restrict)
-  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  client     Client?    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  partner           Partner                  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  location          Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  specialist        Specialist?              @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+  service           Service                  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  client            Client?                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
   pushSubscriptions ClientPushSubscription[]
 
   // Calendar/list queries are almost always tenant + time-window scoped.
@@ -778,28 +987,28 @@ model Booking {
 // ── User (backoffice staff) ─────────────────────────────────
 
 model User {
-  id        String   @id
-  partnerId String
-  name      String
-  email     String
-  phone     String
-  role      UserRole @default(manager)
+  id         String   @id
+  partnerId  String
+  name       String
+  email      String
+  phone      String
+  role       UserRole @default(manager)
   /// Managers are scoped to a single branch; admins have null (all locations).
   locationId String?
 
-  passwordHash String
+  passwordHash       String
   /// Force a password change after first login (managers created with an OTP).
   mustChangePassword Boolean     @default(false)
   otpChannel         OtpChannel?
 
-  active    Boolean   @default(true)
-  lastLogin DateTime?
+  active     Boolean   @default(true)
+  lastLogin  DateTime?
   /// Last time this user was active in the backoffice (bumped on app load /
   /// refresh via /auth/me, throttled). Reflects real usage, not just logins.
   lastSeenAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
 
   partner           Partner            @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   location          Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
@@ -889,12 +1098,12 @@ model ClientPushSubscription {
 
 /// Hashed, rotatable refresh tokens. Enables logout + revoke-on-rotation.
 model RefreshToken {
-  id        String   @id
+  id        String    @id
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -958,9 +1167,9 @@ model PlatformRefreshToken {
 /// token. On activation (link click) we create the real Partner + admin User
 /// atomically and delete/mark this row. Not yet a real tenant.
 model PendingRegistration {
-  id        String  @id
+  id        String @id
   /// Hashed activation token (the raw token goes only in the emailed link).
-  tokenHash String  @unique
+  tokenHash String @unique
 
   // Partner details
   companyName String
@@ -973,7 +1182,7 @@ model PendingRegistration {
   /// through (reserva.am -> bookings, vacancies.reserva.am -> vacancies). Drives
   /// which entitlement is granted on activation and where they land afterwards.
   /// Defaults to `bookings` so existing signup links behave exactly as before.
-  product     String @default("bookings")
+  product String @default("bookings")
 
   // Admin details
   adminName    String
@@ -981,9 +1190,9 @@ model PendingRegistration {
   adminPhone   String
   passwordHash String
 
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   // Uniqueness is enforced at creation against partners/users; these help
   // dedupe repeated signups from the same email/slug.
@@ -1022,30 +1231,30 @@ model DemoRequest {
 /// /public/visits endpoint; enrichment fields are derived server-side from the
 /// request IP (geoip-lite) and User-Agent (ua-parser-js), so all are nullable.
 model VisitorEvent {
-  id         String   @id
-  ip         String?
-  userAgent  String?
+  id          String   @id
+  ip          String?
+  userAgent   String?
   // Parsed from the User-Agent.
-  deviceType String? // mobile | tablet | desktop | console | smarttv | wearable | embedded
-  browser    String?
-  browserVer String?
-  os         String?
-  osVer      String?
+  deviceType  String? // mobile | tablet | desktop | console | smarttv | wearable | embedded
+  browser     String?
+  browserVer  String?
+  os          String?
+  osVer       String?
   // Page context sent by the client.
-  path       String?
-  host       String?
+  path        String?
+  host        String?
   /// The partner (salon) slug whose public page was viewed, when the visit was
   /// on a tenant page (slug.reserva.am or /p/slug). Null for the marketplace /
   /// apex pages. Lets the console filter views per partner.
   partnerSlug String?
-  referrer   String?
-  language   String?
-  screenW    Int?
-  screenH    Int?
+  referrer    String?
+  language    String?
+  screenW     Int?
+  screenH     Int?
   // Derived from the IP.
-  country    String?
-  city       String?
-  createdAt  DateTime @default(now())
+  country     String?
+  city        String?
+  createdAt   DateTime @default(now())
 
   @@index([createdAt])
   @@index([partnerSlug, createdAt])
@@ -1078,10 +1287,10 @@ model SupportThread {
   status    SupportThreadStatus @default(open)
 
   /// Timestamp of the most recent message — drives thread-list ordering.
-  lastMessageAt DateTime @default(now())
+  lastMessageAt  DateTime @default(now())
   /// Unread counts per side, bumped on send and reset on read.
-  partnerUnread  Int @default(0)
-  platformUnread Int @default(0)
+  partnerUnread  Int      @default(0)
+  platformUnread Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

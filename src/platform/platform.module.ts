@@ -12,6 +12,8 @@ import { DemoRequestsModule } from '@/modules/demo-requests/demo-requests.module
 import { PlatformPendingRegistrationsController } from './pending-registrations/platform-pending-registrations.controller';
 import { PlatformPendingRegistrationsService } from './pending-registrations/platform-pending-registrations.service';
 import { PlatformAnalyticsController } from './analytics/platform-analytics.controller';
+import { PlatformSpecialtiesController } from './specialties/platform-specialties.controller';
+import { PlatformSpecialtiesService } from './specialties/platform-specialties.service';
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
 import { SignupModule } from '@/modules/signup/signup.module';
 import { PlatformAuthGuard } from './guards/platform-auth.guard';
@@ -33,6 +35,7 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
     PlatformDemoRequestsController,
     PlatformPendingRegistrationsController,
     PlatformAnalyticsController,
+    PlatformSpecialtiesController,
   ],
   providers: [
     PlatformAuthService,
@@ -40,6 +43,7 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
     PlatformStaffService,
     PlatformStatsService,
     PlatformPendingRegistrationsService,
+    PlatformSpecialtiesService,
     PlatformAuthGuard,
     PlatformRolesGuard,
   ],

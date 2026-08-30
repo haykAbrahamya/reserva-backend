@@ -11,7 +11,7 @@
  * `*Enabled` columns and route names, so one word identifies a product across
  * the database, the API and the URL space.
  */
-export const PRODUCT_KEYS = ['bookings', 'courses'] as const;
+export const PRODUCT_KEYS = ['bookings', 'courses', 'vacancies'] as const;
 
 export type ProductKey = (typeof PRODUCT_KEYS)[number];
 
