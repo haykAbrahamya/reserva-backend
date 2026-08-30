@@ -14,6 +14,9 @@ import {
   SetPartnerBookingsDto,
   SetPartnerCoursesDto,
   SetPartnerKindDto,
+  SetPartnerProductDto,
+  SetProductSettingDto,
+  PartnerBookingsQueryDto,
   PlatformUpdateUserDto,
   PlatformResetPasswordDto,
 } from './dto/platform-partner.dto';
@@ -79,7 +82,34 @@ export class PlatformPartnersController {
     return this.partners.setCourses(id, dto.enabled, user.id);
   }
 
-  @Patch(':id/kind')
+  @Patch(':id/products/:key')
+  @ApiOperation({ summary: 'Grant or withdraw a product for a partner' })
+  setProduct(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body() dto: SetPartnerProductDto,
+  ) {
+    return this.partners.setProductEnabled(id, key, dto.enabled, user.id);
+  }
+
+  @Patch(':id/products/:key/settings')
+  @ApiOperation({ summary: 'Update one product-specific setting for a partner' })
+  setProductSetting(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body() dto: SetProductSettingDto,
+  ) {
+    return this.partners.setProductSetting(id, key, dto.setting, dto.value);
+  }
+
+  @Get(':id/bookings')
+  @ApiOperation({ summary: 'Minimal booking rows for a partner (time, source, status)' })
+  bookings(@Param('id') id: string, @Query() q: PartnerBookingsQueryDto) {
+    return this.partners.bookings(id, q.page, q.pageSize);
+  }
+
+  @Patch(':id/kind')  @Patch(':id/kind')
   @ApiOperation({ summary: 'Switch partner between salon and single (solo) mode' })
   setKind(@Param('id') id: string, @Body() dto: SetPartnerKindDto) {
     return this.partners.setKind(id, dto.kind);

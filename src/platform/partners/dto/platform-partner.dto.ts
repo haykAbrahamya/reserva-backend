@@ -21,6 +21,24 @@ export class SetPartnerBookingsDto extends createZodDto(setPartnerBookingsSchema
 export const setPartnerCoursesSchema = z.object({ enabled: z.boolean() });
 export class SetPartnerCoursesDto extends createZodDto(setPartnerCoursesSchema) {}
 
+/** Grant or withdraw any catalog product for a partner. */
+export const setPartnerProductSchema = z.object({ enabled: z.boolean() });
+export class SetPartnerProductDto extends createZodDto(setPartnerProductSchema) {}
+
+/**
+ * Write one product-specific setting. `setting` is checked server-side against
+ * the SETTING_COLUMNS allowlist, so this cannot reach arbitrary columns.
+ */
+export const setProductSettingSchema = z.object({
+  setting: z.string().trim().min(1).max(60),
+  value: z.boolean(),
+});
+export class SetProductSettingDto extends createZodDto(setProductSettingSchema) {}
+
+/** Paginated, minimal booking rows for the console. */
+export const partnerBookingsQuerySchema = paginationSchema;
+export class PartnerBookingsQueryDto extends createZodDto(partnerBookingsQuerySchema) {}
+
 export const setPartnerKindSchema = z.object({ kind: z.enum(['salon', 'single']) });
 export class SetPartnerKindDto extends createZodDto(setPartnerKindSchema) {}
 

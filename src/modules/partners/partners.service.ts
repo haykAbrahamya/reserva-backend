@@ -9,6 +9,7 @@ import { normalizePhone } from '@/common/utils/phone';
 import { cleanLocalizedInput } from '@/common/schemas/localized';
 import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import type { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
+import { ProductsService } from '@/modules/products/products.service';
 
 @Injectable()
 export class PartnersService {
@@ -16,6 +17,7 @@ export class PartnersService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly reviews: SpecialistReviewsService,
+    private readonly products: ProductsService,
   ) {}
 
   /**
@@ -143,6 +145,11 @@ export class PartnersService {
           mustChangePassword: !dto.admin.password,
         },
       });
+
+      // Every partner provisioned here is a booking customer — same semantics as
+      // the migration backfill and the self-signup path. Granted inside the same
+      // transaction so a partner can never exist without its entitlement.
+      await this.products.grantWithin(tx, partnerId, 'bookings');
 
       return created;
     });

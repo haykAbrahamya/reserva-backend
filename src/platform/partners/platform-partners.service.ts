@@ -6,6 +6,14 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
 import { ProductsService } from '@/modules/products/products.service';
+import {
+  usageFor,
+  settingsFor,
+  SETTING_COLUMNS,
+  type PartnerCounts,
+  type PartnerSettingSource,
+  type PartnerProductPanel,
+} from './partner-products.view';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
@@ -97,6 +105,8 @@ export class PlatformPartnersService {
             services: { where: { deletedAt: null } },
             users: { where: { deletedAt: null } },
             bookings: true,
+            courses: { where: { deletedAt: null } },
+            courseEnrollments: true,
           },
         },
         users: {
@@ -107,7 +117,113 @@ export class PlatformPartnersService {
       },
     });
     if (!partner) throw AppException.notFound('Partner not found');
-    return serialize(partner);
+
+    const base = serialize(partner);
+    return { ...base, products: await this.productPanels(partner.id, base.counts, partner) };
+  }
+
+  /**
+   * Every catalog product described for this partner: whether it is granted,
+   * how much it is being used, and its own settings.
+   *
+   * Driven by the catalog rather than a hardcoded list, so a newly seeded
+   * product (vacancies, seminars) appears in the console immediately — as "not
+   * enabled", with an Enable action — without any code change here or in the UI.
+   */
+  private async productPanels(
+    partnerId: string,
+    counts: PartnerCounts,
+    settingSource: PartnerSettingSource,
+  ): Promise<PartnerProductPanel[]> {
+    const [catalog, grants] = await Promise.all([
+      this.prisma.product.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.partnerProduct.findMany({ where: { partnerId } }),
+    ]);
+    const byKey = new Map(grants.map((g) => [g.productKey, g]));
+    const now = Date.now();
+
+    return catalog.map((product) => {
+      const grant = byKey.get(product.key);
+      const liveTrial =
+        grant?.status !== 'trialing' || !grant.trialEndsAt || grant.trialEndsAt.getTime() > now;
+      const enabled =
+        !!grant && grant.disabledAt === null && grant.status !== 'suspended' && liveTrial;
+
+      return {
+        key: product.key,
+        name: product.name,
+        description: product.description,
+        enabled,
+        status: grant?.status ?? null,
+        plan: grant?.plan ?? null,
+        trialEndsAt: grant?.trialEndsAt ?? null,
+        enabledAt: grant?.enabledAt ?? null,
+        selfServe: product.selfServe,
+        usage: usageFor(product.key, counts),
+        settings: settingsFor(product.key, settingSource),
+      };
+    });
+  }
+
+  /** Grant or withdraw a product for a partner (generic across all products). */
+  async setProductEnabled(id: string, productKey: string, enabled: boolean, actingUserId?: string) {
+    await this.assertExists(id);
+    if (enabled) {
+      await this.products.enable(id, productKey, { enabledById: actingUserId ?? null });
+    } else {
+      await this.products.disable(id, productKey);
+    }
+    // Keep the legacy column in step while it is still the source of truth.
+    if (productKey === 'courses') {
+      await this.prisma.partner.update({ where: { id }, data: { coursesEnabled: enabled } });
+    }
+    return this.get(id);
+  }
+
+  /**
+   * Write one product setting. The key must appear in SETTING_COLUMNS — that
+   * allowlist is what stops this generic endpoint being used to set arbitrary
+   * partner columns.
+   */
+  async setProductSetting(id: string, productKey: string, setting: string, value: boolean) {
+    await this.assertExists(id);
+    const column = SETTING_COLUMNS[productKey]?.[setting];
+    if (!column) {
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_FAILED,
+        `'${setting}' is not a configurable setting of '${productKey}'`,
+      );
+    }
+    await this.prisma.partner.update({ where: { id }, data: { [column]: value } });
+    return this.get(id);
+  }
+
+  /**
+   * Minimal booking rows for the console: when it is, when it was made, and
+   * where it came from. Deliberately excludes client names, phone numbers,
+   * notes and prices — platform staff need volume and provenance, not a
+   * partner's customer data.
+   */
+  async bookings(id: string, page: number, pageSize: number) {
+    await this.assertExists(id);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.booking.findMany({
+        where: { partnerId: id },
+        orderBy: { startAt: 'desc' },
+        select: {
+          id: true,
+          startAt: true,
+          endAt: true,
+          status: true,
+          source: true,
+          createdAt: true,
+          service: { select: { name: true, duration: true } },
+        },
+        ...pageArgs(page, pageSize),
+      }),
+      this.prisma.booking.count({ where: { partnerId: id } }),
+    ]);
+    return paginate(items, total, page, pageSize);
   }
 
   /** Provision a partner + presentation + first admin user atomically. */
@@ -156,6 +272,11 @@ export class PlatformPartnersService {
           mustChangePassword: !dto.admin.password,
         },
       });
+
+      // Every partner provisioned here is a booking customer — same semantics as
+      // the migration backfill and the self-signup path. Granted inside the same
+      // transaction so a partner can never exist without its entitlement.
+      await this.products.grantWithin(tx, partnerId, 'bookings');
 
       // Solo partners get one auto-provisioned location + specialist so the
       // backoffice hides the team UI and bookings auto-assign to the sole pro
@@ -511,6 +632,8 @@ function serialize<T extends PartnerWithCount>(partner: T) {
       services: _count?.services ?? 0,
       users: _count?.users ?? 0,
       bookings: _count?.bookings ?? 0,
+      courses: _count?.courses ?? 0,
+      courseEnrollments: _count?.courseEnrollments ?? 0,
     },
   };
 }
