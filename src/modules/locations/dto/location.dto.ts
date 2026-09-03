@@ -10,6 +10,13 @@ export const createLocationSchema = z.object({
    *  branch name is translatable — address/geo stay single-value. */
   nameI18n: localizedTextSchema,
   address: z.string().trim().min(1).max(240),
+  /**
+   * Structured place from the platform catalog. Optional here so the branches
+   * that predate the column keep validating; the requirement lives at the
+   * product boundary instead (a vacancy cannot publish without it). Null clears
+   * it.
+   */
+  areaKey: z.string().trim().min(1).nullable().optional(),
   phone: z.string().trim().max(40).default(''),
   hours: weekScheduleSchema.optional(),
   /** Geo coordinates from the map picker. Nullable to allow clearing the pin. */

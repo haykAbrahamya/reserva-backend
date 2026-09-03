@@ -17,11 +17,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio",
-    "db:seed": "ts-node prisma/seed.ts"
+    "prisma:studio": "prisma studio"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

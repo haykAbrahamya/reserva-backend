@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { requiredI18nSchema } from '@/common/schemas/localized';
 
 /**
  * A catalog key is permanent: it is stored on every row that references it and
@@ -12,17 +13,6 @@ const keySchema = z
   .min(2)
   .max(48)
   .regex(/^[a-z][a-z0-9-]*$/, 'Use lowercase letters, digits and hyphens');
-
-/**
- * Platform catalog translations are REQUIRED, unlike partner-authored content
- * where they are optional overrides. Every partner in the country reads this
- * vocabulary in their own language, so a missing Armenian name is a bug, not a
- * fallback.
- */
-const requiredI18nSchema = z.object({
-  hy: z.string().trim().min(1).max(120),
-  ru: z.string().trim().min(1).max(120),
-});
 
 const groupFields = z.object({
   name: z.string().trim().min(1).max(120),

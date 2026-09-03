@@ -296,6 +296,64 @@ model PartnerProduct {
   @@map("partner_products")
 }
 
+// ── Area taxonomy (platform catalog) ────────────────────────
+
+/// How deep an area sits. Armenia is `region` (marz) -> `city` -> `district`,
+/// but the depth genuinely varies — Yerevan has 12 districts, Gyumri has none —
+/// which is why this is one self-referencing tree rather than a fixed pair of
+/// tables like SpecialtyGroup/Specialty.
+enum AreaKind {
+  region
+  city
+  district
+}
+
+/// A place a branch can be in: "Yerevan", "Yerevan / Arabkir", "Gyumri".
+///
+/// Platform-owned like Specialty — partners pick from it, never edit it — and
+/// for the same reason: a filter is only useful if every partner in the country
+/// tags the same place with the same key. Free-text addresses cannot do that
+/// (transliteration, typos, and most addresses name no district at all).
+model Area {
+  key       String   @id
+  /// Parent in the tree; null for a top-level region or city.
+  parentKey String?
+  kind      AreaKind
+
+  /// English name — source of truth for search and sort.
+  name     String
+  /// Required { hy, ru }. Not an override blob: a place with no Armenian name is
+  /// unusable in the Armenian UI, so it is data rather than a fallback.
+  nameI18n Json
+
+  /// Search-only synonyms across languages AND eras, lowercased. This is where
+  /// the names people actually type live: Soviet-era ("leninakan", "кировакан"),
+  /// colloquial ("ejmiatsin" for Vagharshapat, "masiv" for the Ajapnyak blocks),
+  /// and transliteration variants ("erevan", "ереван"). Never rendered.
+  aliases String[] @default([])
+
+  /// Centroid, for centring a map and for distance sorting later. Optional
+  /// because a region has no meaningful single point.
+  lat Float?
+  lng Float?
+
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Restrict: an area in use must not vanish and strand branches with a
+  /// dangling key — the same rule as Product and Specialty.
+  parent    Area?      @relation("AreaTree", fields: [parentKey], references: [key], onDelete: Restrict)
+  children  Area[]     @relation("AreaTree")
+  locations Location[]
+
+  @@index([parentKey, sortOrder])
+  @@index([active, kind, sortOrder])
+  @@map("areas")
+}
+
 // ── Specialty taxonomy (platform catalog) ───────────────────
 
 /// Top-level bucket for specialties ("Hair", "Nails", "Medical"). Exists so the
@@ -408,6 +466,14 @@ model Location {
   address   String
   phone     String @default("")
 
+  /// Structured place, for filtering and facets. NULLABLE on purpose: existing
+  /// branches predate this column and must keep working. It is required at the
+  /// product boundary instead — a vacancy cannot be published from a branch with
+  /// no area, because that is a listing the board cannot place. The free-text
+  /// `address` stays as the human-readable street line; the two are
+  /// complementary, not alternatives.
+  areaKey String?
+
   /// Geo coordinates from the map picker (null until set). Powers map display,
   /// directions, and future "near me" / distance sort on the marketplace.
   lat Float?
@@ -427,8 +493,14 @@ model Location {
   users         User[]
   courseCohorts CourseCohort[]
   vacancies     Vacancy[]
+  /// Restrict, not SetNull: deleting an area that branches sit in would silently
+  /// strip their place and leave any published vacancy unplaceable. Staff
+  /// deactivate an area instead — same rule as Product and Specialty.
+  area          Area?          @relation(fields: [areaKey], references: [key], onDelete: Restrict)
 
   @@index([partnerId, deletedAt])
+  /// "which branches are in this area" — the board's filter path.
+  @@index([areaKey])
   @@map("locations")
 }
 
@@ -759,11 +831,14 @@ model Vacancy {
   /// not erase the record that someone applied to it.
   deletedAt   DateTime?
 
-  partner   Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partner      Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   /// Restrict: deleting a branch that still advertises positions would strand
   /// them with no address.
-  location  Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  specialty Specialty @relation(fields: [specialtyKey], references: [key], onDelete: Restrict)
+  location     Location             @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  specialty    Specialty            @relation(fields: [specialtyKey], references: [key], onDelete: Restrict)
+  /// People who applied. Cascades on a HARD delete only — a listing is soft
+  /// deleted, so removing it from the board keeps its applicants readable.
+  applications VacancyApplication[]
 
   /// The backoffice list — this partner's listings by state.
   @@index([partnerId, deletedAt, status])
@@ -772,6 +847,64 @@ model Vacancy {
   @@index([specialtyKey, status])
   @@index([locationId])
   @@map("vacancies")
+}
+
+/// Where an application came from. Only `board` is produced today; the column
+/// exists now so that shipping professional accounts is an INSERT of a new
+/// value rather than a backfill of thousands of undecided rows.
+enum VacancyApplicationSource {
+  board
+  account
+}
+
+/// How the salon has triaged one applicant.
+///
+/// Deliberately tiny. A salon works this list with a phone in its hand, so the
+/// only states worth storing are "nobody has looked yet", "we called them",
+/// "we want them" and "no".
+enum VacancyApplicationStatus {
+  new
+  contacted
+  shortlisted
+  rejected
+}
+
+/// One person applying to one listing.
+///
+/// There is no account to point at: applications are unauthenticated today, so
+/// this row IS the applicant. When professional registration ships, a nullable
+/// `userId` joins the two without touching what is stored here.
+model VacancyApplication {
+  id        String @id
+  vacancyId String
+
+  /// As the applicant typed it.
+  name  String
+  /// Normalized to E.164 (`normalizePhone`) so the unique constraint below
+  /// treats "+374 93 813296" and "+37493813296" as the same person.
+  phone String
+  email String @default("")
+  /// Their message to the salon — the free text that actually gets read.
+  note  String @default("")
+
+  /// UI language the person applied in, so the salon calls back in it.
+  locale String                   @default("hy")
+  source VacancyApplicationSource @default(board)
+
+  status    VacancyApplicationStatus @default(new)
+  /// First time the salon opened it — what makes the "new" badge trustworthy.
+  seenAt    DateTime?
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  /// One application per person per listing. Re-applying updates their message
+  /// instead of filling the salon's inbox with duplicates.
+  @@unique([vacancyId, phone])
+  /// The salon's inbox for one listing, newest first.
+  @@index([vacancyId, createdAt])
+  @@map("vacancy_applications")
 }
 
 // ── Specialist ──────────────────────────────────────────────

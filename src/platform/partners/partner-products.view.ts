@@ -30,6 +30,7 @@ export interface PartnerCounts {
   bookings: number;
   courses: number;
   courseEnrollments: number;
+  vacancies: number;
 }
 
 /** The partner columns a product's settings can read. */
@@ -53,6 +54,14 @@ const USAGE_RESOLVERS: Record<string, (c: PartnerCounts) => ProductUsageStat[]> 
   courses: (c) => [
     { label: 'Courses', value: c.courses },
     { label: 'Enrollments', value: c.courseEnrollments },
+  ],
+  vacancies: (c) => [
+    { label: 'Listings', value: c.vacancies },
+    // Branches are shown here too because a vacancies-only partner has no other
+    // screen that says whether they have set their locations up at all — and a
+    // partner with listings but no branches is a support ticket waiting to
+    // happen (nothing can be published from a branch with no area).
+    { label: 'Branches', value: c.locations },
   ],
 };
 

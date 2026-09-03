@@ -16,6 +16,25 @@ export const localizedTextSchema = z
 
 export type LocalizedTextInput = z.infer<typeof localizedTextSchema>;
 
+/**
+ * Translations for a PLATFORM catalog row (specialties, areas, …).
+ *
+ * The distinction from `localizedTextSchema` above is deliberate and matters:
+ * partner-authored content treats translations as optional OVERRIDES with a
+ * fallback to the base value, whereas a platform catalog is rendered to every
+ * partner in the country in their own language — so a missing Armenian name is
+ * a bug that reaches production UI, not a fallback. Required, therefore.
+ *
+ * English lives in the row's base column (`name`), which stays the source of
+ * truth for search and sort; this blob carries the other two.
+ */
+export const requiredI18nSchema = z.object({
+  hy: z.string().trim().min(1).max(160),
+  ru: z.string().trim().min(1).max(160),
+});
+
+export type RequiredI18n = z.infer<typeof requiredI18nSchema>;
+
 /** Trim + drop empty locales; return null when nothing meaningful remains, so we
  *  never persist an empty {} (clean "no translations" signal). */
 export function cleanLocalizedInput(input: LocalizedTextInput): Record<string, string> | null {

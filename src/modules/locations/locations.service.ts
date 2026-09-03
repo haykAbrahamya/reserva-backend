@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
+import { AreasService } from '@/modules/areas/areas.service';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
 import { cleanLocalizedInput } from '@/common/schemas/localized';
@@ -10,7 +11,10 @@ import type { CreateLocationDto, UpdateLocationDto, ListLocationQueryDto } from 
 
 @Injectable()
 export class LocationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly areas: AreasService,
+  ) {}
 
   async list(partnerId: string, q: ListLocationQueryDto) {
     const where: Prisma.LocationWhereInput = {
@@ -39,6 +43,13 @@ export class LocationsService {
     return paginate(items, total, q.page, q.pageSize);
   }
 
+  /** The area must exist and be active — a retired one must not spread. */
+  private async assertArea(key: string) {
+    if (!(await this.areas.isActive(key))) {
+      throw AppException.badRequest(ErrorCode.VALIDATION_FAILED, `Unknown area "${key}"`);
+    }
+  }
+
   async get(partnerId: string, id: string) {
     const location = await this.prisma.location.findFirst({
       where: { id, partnerId, deletedAt: null },
@@ -47,7 +58,8 @@ export class LocationsService {
     return location;
   }
 
-  create(partnerId: string, dto: CreateLocationDto) {
+  async create(partnerId: string, dto: CreateLocationDto) {
+    if (dto.areaKey) await this.assertArea(dto.areaKey);
     return this.prisma.location.create({
       data: {
         id: newId(),
@@ -60,12 +72,14 @@ export class LocationsService {
         hours: (dto.hours ?? {}) as Prisma.InputJsonValue,
         lat: dto.lat ?? null,
         lng: dto.lng ?? null,
+        areaKey: dto.areaKey ?? null,
       },
     });
   }
 
   async update(partnerId: string, id: string, dto: UpdateLocationDto) {
     await this.get(partnerId, id);
+    if (dto.areaKey) await this.assertArea(dto.areaKey);
     const data: Prisma.LocationUncheckedUpdateInput = {
       ...(dto.name !== undefined && { name: dto.name }),
       ...(dto.address !== undefined && { address: dto.address }),
@@ -73,6 +87,8 @@ export class LocationsService {
       ...(dto.hours !== undefined && { hours: dto.hours as Prisma.InputJsonValue }),
       ...(dto.lat !== undefined && { lat: dto.lat }),
       ...(dto.lng !== undefined && { lng: dto.lng }),
+      // undefined = leave alone; null = clear the area.
+      ...(dto.areaKey !== undefined && { areaKey: dto.areaKey }),
     };
     // Only touch the translation column when the client sent it (undefined =
     // leave as-is; present = set/clear, with empty → JsonNull).

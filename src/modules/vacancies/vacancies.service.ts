@@ -24,7 +24,23 @@ const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000);
 /** The relations every listing is read with — a listing without its branch and
  *  its specialty cannot be rendered. */
 const LISTING_INCLUDE = {
-  location: { select: { id: true, name: true, address: true } },
+  location: {
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      areaKey: true,
+      /// The place, resolved for display — "Yerevan / Arabkir".
+      area: {
+        select: {
+          key: true,
+          name: true,
+          nameI18n: true,
+          parent: { select: { key: true, name: true, nameI18n: true } },
+        },
+      },
+    },
+  },
   specialty: {
     select: { key: true, name: true, nameI18n: true, roleName: true, roleNameI18n: true, groupKey: true },
   },
@@ -213,6 +229,13 @@ export class VacanciesService {
     scopeLocationId: string | null,
   ): Promise<VacancyView> {
     const current = await this.get(partnerId, id, scopeLocationId);
+    // Publishing is the product boundary where a structured place becomes
+    // mandatory: a listing whose branch has no area cannot be filtered by
+    // region on the public board, so it would be invisible to the people
+    // searching for it. Drafts are exempt — you can write one before deciding.
+    if (action === 'publish' || action === 'renew') {
+      await this.assertBranchHasArea(current.locationId);
+    }
 
     const data: Prisma.VacancyUpdateInput =
       action === 'publish'
@@ -258,6 +281,24 @@ export class VacanciesService {
       select: { id: true },
     });
     if (!found) throw AppException.notFound('Branch not found');
+  }
+
+  /**
+   * A branch must have a structured area before its listings go public. The
+   * column is nullable so existing branches keep working, so this is the check
+   * that keeps the board's filter honest.
+   */
+  private async assertBranchHasArea(locationId: string) {
+    const branch = await this.prisma.location.findUnique({
+      where: { id: locationId },
+      select: { name: true, areaKey: true },
+    });
+    if (!branch?.areaKey) {
+      throw AppException.badRequest(
+        ErrorCode.VALIDATION_FAILED,
+        `Set the city or district for the branch "${branch?.name ?? ''}" before publishing — listings are filtered by area.`,
+      );
+    }
   }
 
   private async assertSpecialty(key: string) {

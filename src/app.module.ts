@@ -20,7 +20,9 @@ import { ServicesModule } from './modules/services/services.module';
 import { CoursesModule } from './modules/courses/courses.module';
 import { ProductsModule } from './modules/products/products.module';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
+import { AreasModule } from './modules/areas/areas.module';
 import { VacanciesModule } from './modules/vacancies/vacancies.module';
+import { BoardModule } from '@/modules/board/board.module';
 import { SpecialistsModule } from './modules/specialists/specialists.module';
 import { SpecialistReviewsModule } from './modules/specialist-reviews/specialist-reviews.module';
 import { ClientsModule } from './modules/clients/clients.module';
@@ -68,7 +70,9 @@ import { HealthController } from './health.controller';
     ServicesModule,
     CoursesModule,
     SpecialtiesModule,
+    AreasModule,
     VacanciesModule,
+    BoardModule,
     SpecialistsModule,
     SpecialistReviewsModule,
     ClientsModule,

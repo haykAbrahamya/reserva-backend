@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { VacanciesService } from './vacancies.service';
+import { VacancyApplicationsService } from './applications.service';
 import { CurrentUser, RequiresProduct } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import {
@@ -8,6 +9,7 @@ import {
   UpdateVacancyDto,
   VacancyActionDto,
   ListVacancyQueryDto,
+  ApplicationStatusDto,
 } from './dto/vacancy.dto';
 
 /**
@@ -26,7 +28,10 @@ import {
 @RequiresProduct('vacancies')
 @Controller('vacancies')
 export class VacanciesController {
-  constructor(private readonly vacancies: VacanciesService) {}
+  constructor(
+    private readonly vacancies: VacanciesService,
+    private readonly applications: VacancyApplicationsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "List the partner's vacancies" })
@@ -69,5 +74,43 @@ export class VacanciesController {
   @ApiOperation({ summary: 'Remove a vacancy (soft delete)' })
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.vacancies.remove(user.partnerId, id, user.locationId);
+  }
+
+  // -- applicants --------------------------------------------
+
+  /**
+   * Applicant counts for every listing, in one call.
+   *
+   * A separate endpoint rather than a field on the list, so the list stays
+   * cacheable and a partner without a single applicant pays nothing for the
+   * feature.
+   */
+  @Get('applications/counts')
+  @ApiOperation({ summary: 'Applicant totals per vacancy (badges)' })
+  applicationCounts(@CurrentUser() user: AuthUser) {
+    return this.applications.countsForPartner(user.partnerId, user.locationId);
+  }
+
+  @Get(':id/applications')
+  @ApiOperation({ summary: 'Who applied to this listing' })
+  listApplications(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.applications.listForVacancy(user.partnerId, id, user.locationId);
+  }
+
+  @Patch(':id/applications/:applicationId')
+  @ApiOperation({ summary: 'Triage an applicant (contacted / shortlisted / rejected)' })
+  setApplicationStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: ApplicationStatusDto,
+  ) {
+    return this.applications.setStatus(
+      user.partnerId,
+      id,
+      applicationId,
+      dto.status,
+      user.locationId,
+    );
   }
 }

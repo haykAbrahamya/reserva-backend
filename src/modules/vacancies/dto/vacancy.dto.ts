@@ -162,3 +162,13 @@ export const listVacancyQuerySchema = paginationSchema.extend({
   search: z.string().trim().max(140).optional(),
 });
 export class ListVacancyQueryDto extends createZodDto(listVacancyQuerySchema) {}
+
+/**
+ * Applicant triage. A verb-like set rather than free text, and deliberately
+ * without a "hired" state: hiring happens off-platform and a status nobody
+ * updates is worse than one that stops at "we want them".
+ */
+export const applicationStatusSchema = z.object({
+  status: z.enum(['new', 'contacted', 'shortlisted', 'rejected']),
+});
+export class ApplicationStatusDto extends createZodDto(applicationStatusSchema) {}

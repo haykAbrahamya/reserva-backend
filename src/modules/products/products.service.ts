@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, PartnerProductStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { activeGrantWhere, grantConfersAccess } from './product-access';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
@@ -24,11 +25,6 @@ export interface PartnerProductView {
  */
 type ProductSetupHook = (partnerId: string, tx: Prisma.TransactionClient) => Promise<void>;
 
-/** A grant only confers access while it is active (or inside a live trial). */
-const USABLE_STATUSES: readonly PartnerProductStatus[] = [
-  PartnerProductStatus.active,
-  PartnerProductStatus.trialing,
-];
 
 @Injectable()
 export class ProductsService {
@@ -59,28 +55,21 @@ export class ProductsService {
    */
   async listFor(partnerId: string): Promise<PartnerProductView[]> {
     const rows = await this.prisma.partnerProduct.findMany({
-      where: {
-        partnerId,
-        disabledAt: null,
-        status: { in: [...USABLE_STATUSES] },
-        product: { active: true },
-      },
+      // The whole rule, including the trial clock, applied in SQL — see
+      // product-access.ts. Nothing to re-filter in memory afterwards.
+      where: { partnerId, ...activeGrantWhere() },
       include: { product: { select: { name: true, sortOrder: true } } },
       orderBy: { product: { sortOrder: 'asc' } },
     });
 
-    const now = Date.now();
-    return rows
-      // An expired trial is not access, whatever the status column says.
-      .filter((r) => !this.isExpiredTrial(r.status, r.trialEndsAt, now))
-      .map((r) => ({
-        key: r.productKey,
-        name: r.product.name,
-        status: r.status,
-        plan: r.plan,
-        trialEndsAt: r.trialEndsAt,
-        settings: r.settings,
-      }));
+    return rows.map((r) => ({
+      key: r.productKey,
+      name: r.product.name,
+      status: r.status,
+      plan: r.plan,
+      trialEndsAt: r.trialEndsAt,
+      settings: r.settings,
+    }));
   }
 
   /** Whether the partner may use a product right now. */
@@ -89,9 +78,7 @@ export class ProductsService {
       where: { partnerId_productKey: { partnerId, productKey: key } },
       select: { status: true, disabledAt: true, trialEndsAt: true },
     });
-    if (!row || row.disabledAt !== null) return false;
-    if (!USABLE_STATUSES.includes(row.status)) return false;
-    return !this.isExpiredTrial(row.status, row.trialEndsAt, Date.now());
+    return grantConfersAccess(row);
   }
 
   /** Throwing form, for guards and service-level checks. */
@@ -216,15 +203,4 @@ export class ProductsService {
     });
   }
 
-  private isExpiredTrial(
-    status: PartnerProductStatus,
-    trialEndsAt: Date | null,
-    now: number,
-  ): boolean {
-    return (
-      status === PartnerProductStatus.trialing &&
-      trialEndsAt !== null &&
-      trialEndsAt.getTime() <= now
-    );
-  }
 }

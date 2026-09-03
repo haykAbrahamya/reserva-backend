@@ -107,6 +107,7 @@ export class PlatformPartnersService {
             bookings: true,
             courses: { where: { deletedAt: null } },
             courseEnrollments: true,
+            vacancies: { where: { deletedAt: null } },
           },
         },
         users: {
@@ -634,6 +635,7 @@ function serialize<T extends PartnerWithCount>(partner: T) {
       bookings: _count?.bookings ?? 0,
       courses: _count?.courses ?? 0,
       courseEnrollments: _count?.courseEnrollments ?? 0,
+      vacancies: _count?.vacancies ?? 0,
     },
   };
 }
