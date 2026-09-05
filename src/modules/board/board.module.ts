@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OptionalProfessionalGuard } from '@/professionals/guards/optional-professional.guard';
 import { VacanciesModule } from '@/modules/vacancies/vacancies.module';
 import { BoardController } from './board.controller';
 import { BoardService } from './board.service';
@@ -18,6 +19,6 @@ import { BoardService } from './board.service';
 @Module({
   imports: [VacanciesModule],
   controllers: [BoardController],
-  providers: [BoardService],
+  providers: [OptionalProfessionalGuard, BoardService],
 })
 export class BoardModule {}

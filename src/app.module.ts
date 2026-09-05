@@ -34,6 +34,7 @@ import { SignupModule } from './modules/signup/signup.module';
 import { DemoRequestsModule } from './modules/demo-requests/demo-requests.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { PlatformModule } from './platform/platform.module';
+import { ProfessionalsModule } from './professionals/professionals.module';
 import { SupportModule } from './modules/support/support.module';
 import { HealthController } from './health.controller';
 
@@ -84,6 +85,7 @@ import { HealthController } from './health.controller';
     DemoRequestsModule,
     AnalyticsModule,
     PlatformModule,
+    ProfessionalsModule,
     SupportModule,
   ],
   controllers: [HealthController],

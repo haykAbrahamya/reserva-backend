@@ -64,7 +64,7 @@ export class VacancyApplicationsService {
    * in the salon's inbox; the unique key on (vacancy, phone) is what makes that
    * true even against a double-tapped submit button.
    */
-  async applyFromBoard(vacancyId: string, dto: ApplicationInput) {
+  async applyFromBoard(vacancyId: string, dto: ApplicationInput, professionalId?: string | null) {
     const vacancy = await this.prisma.vacancy.findFirst({
       where: { AND: [{ id: vacancyId }, liveVacancyWhere()] },
       select: { id: true, applyMode: true },
@@ -102,11 +102,31 @@ export class VacancyApplicationsService {
         note: dto.note,
         locale: dto.locale,
         source: 'board',
+        /*
+         * The account behind the application, when there is one.
+         *
+         * Optional and staying that way: applying has never required an
+         * account. This exists so a signed-in professional can see their own
+         * history, and for nothing else — the salon reads the same fields
+         * either way, so an anonymous application is not a lesser one.
+         */
+        professionalId: professionalId ?? null,
       },
       // Only what the applicant can restate. Their triage status is the salon's
       // to set, so a second submission must not quietly reset a "contacted"
       // application back to new and lose the salon's work.
-      update: { name: dto.name, email: dto.email, note: dto.note, locale: dto.locale },
+      //
+      // The account link is claimed on re-application too, but only FORWARD:
+      // a signed-in person re-applying claims the row they made anonymously,
+      // while an anonymous re-application never clears a link that exists.
+      // Clearing it would silently delete someone's own history.
+      update: {
+        name: dto.name,
+        email: dto.email,
+        note: dto.note,
+        locale: dto.locale,
+        ...(professionalId ? { professionalId } : {}),
+      },
       select: { id: true },
     });
 

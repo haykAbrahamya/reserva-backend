@@ -7,7 +7,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from './password.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
-import { newId } from '@/common/ids';
+import { newId, newTokenId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import type { AuthUser, JwtPayload } from './auth.types';
 import { ProductsService } from '@/modules/products/products.service';
@@ -179,7 +179,11 @@ export class AuthService {
       secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       expiresIn: this.config.getOrThrow<string>('JWT_REFRESH_TTL'),
     } as JwtSignOptions;
-    const refreshToken = await this.jwt.signAsync({ sub: user.id, type: 'refresh' }, refreshOpts);
+    // `jti` keeps two tokens minted in the same second distinct — see newTokenId.
+    const refreshToken = await this.jwt.signAsync(
+      { sub: user.id, type: 'refresh', jti: newTokenId() },
+      refreshOpts,
+    );
 
     // Persist the refresh token hashed so it can be revoked/rotated.
     const decoded = this.jwt.decode(refreshToken) as { exp: number };

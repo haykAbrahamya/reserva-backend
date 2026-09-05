@@ -7,7 +7,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { PasswordService } from '@/auth/password.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
-import { newId } from '@/common/ids';
+import { newId, newTokenId } from '@/common/ids';
 import type { PlatformJwtPayload } from '../platform.types';
 
 interface Tokens {
@@ -129,7 +129,8 @@ export class PlatformAuthService {
       expiresIn: this.config.getOrThrow<string>('JWT_REFRESH_TTL'),
     } as JwtSignOptions;
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, type: 'platform-refresh' },
+      // `jti` keeps two tokens minted in the same second distinct — see newTokenId.
+      { sub: user.id, type: 'platform-refresh', jti: newTokenId() },
       refreshOpts,
     );
 

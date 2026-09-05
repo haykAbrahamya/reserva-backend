@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Post, Query, Body, Res } from '@nestjs/common';
+import { Controller, Get, Header, Param, Post, Query, Body, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
@@ -7,6 +7,9 @@ import { AreasService } from '@/modules/areas/areas.service';
 import { SpecialtiesService } from '@/modules/specialties/specialties.service';
 import { VacancyApplicationsService } from '@/modules/vacancies/applications.service';
 import { BoardService } from './board.service';
+import { OptionalProfessionalGuard } from '@/professionals/guards/optional-professional.guard';
+import { CurrentProfessional } from '@/professionals/professional.decorators';
+import type { ProfessionalAuthUser } from '@/professionals/professional.types';
 import { BoardQueryDto, ApplyDto } from './dto/board.dto';
 
 /**
@@ -128,9 +131,22 @@ export class BoardController {
    * useless for a script. De-duplication by phone does the rest.
    */
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(OptionalProfessionalGuard)
   @Post('vacancies/:id/apply')
-  @ApiOperation({ summary: 'Apply to a listing (name + phone, no account)' })
-  apply(@Param('id') id: string, @Body() dto: ApplyDto) {
-    return this.applications.applyFromBoard(id, dto);
+  @ApiOperation({ summary: 'Apply to a listing (name + phone; an account is optional)' })
+  apply(
+    @Param('id') id: string,
+    @Body() dto: ApplyDto,
+    @CurrentProfessional() professional?: ProfessionalAuthUser,
+  ) {
+    /*
+     * Still anonymous by default.
+     *
+     * The guard attaches an account only when a valid professional token came
+     * with the request and never refuses one that did not — so this stays the
+     * open endpoint it has always been, and a signed-in applicant additionally
+     * gets the application filed under their own name.
+     */
+    return this.applications.applyFromBoard(id, dto, professional?.id ?? null);
   }
 }

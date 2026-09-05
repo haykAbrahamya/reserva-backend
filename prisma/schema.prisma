@@ -897,14 +897,126 @@ model VacancyApplication {
   createdAt DateTime                 @default(now())
   updatedAt DateTime                 @updatedAt
 
-  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  /// The account that applied, when there was one. NULLABLE on purpose and
+  /// permanently so: applying has never required an account and still does not,
+  /// so most rows have none. It exists to give a signed-in professional a list
+  /// of their own applications without changing what an anonymous one stores.
+  ///
+  /// SetNull rather than Cascade: deleting an account must not delete the
+  /// salon's record of who applied to its listing.
+  professionalId String?
+
+  vacancy      Vacancy       @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
 
   /// One application per person per listing. Re-applying updates their message
   /// instead of filling the salon's inbox with duplicates.
   @@unique([vacancyId, phone])
   /// The salon's inbox for one listing, newest first.
   @@index([vacancyId, createdAt])
+  /// "My applications" — one professional's history, newest first.
+  @@index([professionalId, createdAt])
   @@map("vacancy_applications")
+}
+
+// ── Professionals (the other side of the vacancies market) ──
+
+/// A person looking for work, with an account of their own.
+///
+/// A THIRD kind of principal, alongside `User` (staff at a partner) and
+/// `PlatformUser` (Reserva staff). Deliberately not a `User`: that model is
+/// scoped to a `partnerId` and carries admin/manager roles, so putting a job
+/// seeker there would mean inventing an organization for every individual and
+/// then special-casing every tenant-scoped query, guard and role check in the
+/// system.
+///
+/// Note the name. `Specialist` was already taken — that is the BOOKABLE person
+/// at a salon, with a schedule — and two different concepts one word apart in
+/// one schema is a bug waiting to happen. `Professional` is the word the
+/// application model already used for this idea.
+///
+/// Sessions live in their own realm: tokens are typed `professional-access`,
+/// so one can never authenticate a partner or platform route (see
+/// ProfessionalAuthGuard).
+model Professional {
+  id   String @id
+  name String
+
+  /// The identifier that matters in this market. Normalized to E.164 by
+  /// `normalizePhone`, so "+374 93 813296" and "+37493813296" are one person —
+  /// the same rule the anonymous application path already applies, which is
+  /// what lets an account claim the applications made before it existed.
+  phone String  @unique
+  /// Optional: plenty of professionals here have a phone and no email. Unique
+  /// when present (Postgres allows many NULLs in a unique index).
+  email String? @unique
+
+  passwordHash String
+
+  /// What they do, from the SAME catalog vacancies are tagged with. Reusing the
+  /// taxonomy is the entire point — a professional keyed `hair-styling` and a
+  /// listing keyed `hair-styling` is what makes matching possible at all. A
+  /// second vocabulary for people would make the two sides permanently
+  /// incomparable.
+  specialtyKeys String[] @default([])
+  /// Where they can work, from the same area tree the board filters by.
+  areaKeys      String[] @default([])
+
+  /// Years in the trade. NOT the listing's `VacancyExperience` scale, which
+  /// this originally reused and should not have: 'any' | 'junior' |
+  /// 'experienced' is what a SALON writes about a role ("any experience
+  /// accepted"), and read back as a person's self-description it is
+  /// meaningless — nobody has "any" experience. Years are what a professional
+  /// actually knows about themselves, and a rule still maps them onto the
+  /// listing scale, so nothing about matching is lost.
+  ///
+  /// Nullable: "prefer not to say" is a real answer, and a required number here
+  /// would push people into inventing one.
+  experienceYears Int?
+
+  /// Free text about themselves — what a salon reads first.
+  about String @default("")
+  /// Uploaded CV, when they have one. Empty = none; the field exists now so
+  /// adding upload later is a route, not a migration.
+  cvUrl String @default("")
+
+  /// UI language they registered in, so mail reaches them in it.
+  locale String @default("hy")
+
+  active    Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft delete, matching every other principal: removing an account must not
+  /// erase the salon's record of who applied to its listings.
+  deletedAt DateTime?
+
+  refreshTokens ProfessionalRefreshToken[]
+  applications  VacancyApplication[]
+
+  /// "Professionals available for a colourist role in Yerevan" — the search the
+  /// salon-facing side will run. GIN, because both columns are arrays.
+  @@index([specialtyKeys], type: Gin)
+  @@index([areaKeys], type: Gin)
+  @@index([active])
+  @@map("professionals")
+}
+
+/// Hashed, rotatable refresh tokens for professional sessions — the same
+/// arrangement as PlatformRefreshToken, kept separate so revoking one realm
+/// cannot touch another.
+model ProfessionalRefreshToken {
+  id             String    @id
+  professionalId String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId, revokedAt])
+  @@map("professional_refresh_tokens")
 }
 
 // ── Specialist ──────────────────────────────────────────────
