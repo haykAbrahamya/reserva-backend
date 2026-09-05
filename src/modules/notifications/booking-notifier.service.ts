@@ -115,10 +115,20 @@ export class BookingNotifier {
 
   /** Fire-and-forget entrypoint — safe to call without awaiting.
    *  `actorId` (the user who performed the action) is excluded from recipients. */
-  notify(event: BookingEvent, booking: NotifiableBooking, actorId?: string): void {
+  notify(
+    event: BookingEvent,
+    booking: NotifiableBooking,
+    actorId?: string,
+    /**
+     * `skipCustomer` sends to staff only. Used for a BACKDATED booking, where
+     * the customer copy would announce an appointment that is already over.
+     */
+    opts: { skipCustomer?: boolean } = {},
+  ): void {
     this.run(event, booking, actorId).catch((e) =>
       this.logger.warn(`Booking notification failed: ${(e as Error).message}`),
     );
+    if (opts.skipCustomer) return;
     // Customer Telegram notification runs independently (separate failure domain).
     this.notifyCustomer(event, booking).catch((e) =>
       this.logger.warn(`Customer telegram notification failed: ${(e as Error).message}`),

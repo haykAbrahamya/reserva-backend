@@ -41,6 +41,19 @@ export const bookingSlotsQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
   /** Reschedule: ignore this booking's own window so its slot stays pickable. */
   excludeBookingId: z.string().uuid().optional(),
+  /**
+   * Also return start times that have already passed, so staff can record a
+   * visit that already happened. Backoffice-only by construction: the public
+   * app calls a different endpoint with its own floor.
+   *
+   * Parsed explicitly rather than with `z.coerce.boolean()`, which maps the
+   * STRING 'false' to true — every non-empty string is truthy — so an honest
+   * `?includePast=false` would have switched the feature on.
+   */
+  includePast: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
 });
 export class BookingSlotsQueryDto extends createZodDto(bookingSlotsQuerySchema) {}
 

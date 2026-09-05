@@ -133,8 +133,16 @@ export class BookingsService {
     const day = new Date(y, m - 1, d);
     const dayEnd = new Date(y, m - 1, d + 1);
 
-    // `create` refuses past times, so don't offer them either.
-    const notBefore = new Date(Date.now() - 60_000);
+    /*
+     * `create` refuses past times, so don't offer them either — unless the
+     * caller asked for them.
+     *
+     * This is the BACKOFFICE slots endpoint; the public app has its own
+     * (`PublicBookingService.slots`) with its own hard-coded floor, so opening
+     * this one cannot leak past times to clients. That separation is the reason
+     * a query flag is safe here rather than a privilege check.
+     */
+    const notBefore = q.includePast ? undefined : new Date(Date.now() - 60_000);
 
     const activeBookings = await this.prisma.booking.findMany({
       where: {
@@ -196,7 +204,21 @@ export class BookingsService {
 
     const startAt = dto.startAt;
     const endAt = new Date(startAt.getTime() + service.duration * 60_000);
-    this.assertFuture(startAt);
+
+    /*
+     * Only staff may backdate, and that is derived from the SOURCE rather than
+     * passed in as an option.
+     *
+     * `BookingSource` has exactly two values and each entry point sets its own
+     * — the JWT-guarded controller says `backoffice`, the public flow says
+     * `public` — so this cannot be got wrong by forgetting an argument, and a
+     * new client-facing path cannot opt itself in. A boolean parameter would
+     * have had to be passed correctly at every present and future call site to
+     * mean the same thing.
+     */
+    const mayBackdate = opts.source === BookingSource.backoffice;
+    this.assertStartAllowed(startAt, mayBackdate);
+    const historical = mayBackdate && this.isPast(startAt);
 
     if (specialist) {
       // Specialist booking: enforce the specialist's offer/schedule/time-off.
@@ -204,9 +226,12 @@ export class BookingsService {
       assertBookingAllowed(
         { specialist, location, serviceId: dto.serviceId, startAt, endAt },
         timeOff,
+        { historical },
       );
     } else {
       // Facility/entry service (spa): no specialist → enforce concurrent capacity.
+      // Capacity still applies to a past booking: two people cannot have
+      // occupied one chair, whenever it was.
       await this.assertCapacity(service.id, dto.locationId, startAt, endAt, service.capacity);
     }
 
@@ -245,9 +270,19 @@ export class BookingsService {
       }),
     );
 
-    // Best-effort notify admins + the branch's managers (never blocks the write).
-    // Skip the creator if it was a backoffice user (public bookings have none).
-    this.notifier.notify('created', booking, opts.createdById);
+    /*
+     * Best-effort notify admins + the branch's managers (never blocks the
+     * write). Skip the creator if it was a backoffice user (public bookings
+     * have none).
+     *
+     * A BACKDATED booking notifies staff but not the client. The customer copy
+     * for a new booking reads "We've got your request — give us a moment to
+     * confirm it", and sending that about a haircut that happened last Tuesday
+     * is worse than sending nothing: it invites the client to expect an
+     * appointment that is already over. Staff still get theirs, because someone
+     * adding history to the calendar is exactly what a manager wants to see.
+     */
+    this.notifier.notify('created', booking, opts.createdById, { skipCustomer: historical });
     return booking;
   }
 
@@ -276,10 +311,21 @@ export class BookingsService {
     const reschedule =
       dto.startAt !== undefined || dto.specialistId !== undefined || dto.serviceId !== undefined;
     if (reschedule) {
-      this.assertFuture(startAt);
+      /*
+       * Rescheduling INTO the past is allowed, because only staff can get here:
+       * this method is reachable only from the JWT-guarded backoffice
+       * controller, and the public flow has no reschedule at all. Correcting a
+       * time that was entered wrong is the common case, and it is the same
+       * privilege as creating a past booking in the first place.
+       */
+      const historical = this.isPast(startAt);
       if (specialist) {
         const timeOff = await this.timeOffWindows(specialist.id, startAt, endAt);
-        assertBookingAllowed({ specialist, location, serviceId, startAt, endAt }, timeOff);
+        assertBookingAllowed(
+          { specialist, location, serviceId, startAt, endAt },
+          timeOff,
+          { historical },
+        );
       } else {
         // Facility/entry service: capacity check (exclude this booking itself).
         await this.assertCapacity(serviceId, existing.locationId, startAt, endAt, service.capacity, id);
@@ -442,8 +488,30 @@ export class BookingsService {
     }
   }
 
-  private assertFuture(startAt: Date) {
-    if (startAt.getTime() < Date.now() - 60_000) {
+  /**
+   * A start time is in the past once it is more than a minute behind the clock.
+   *
+   * The minute of slack absorbs clock skew between the client picking a slot and
+   * the server validating it — without it, booking the current slot at :00
+   * intermittently failed.
+   */
+  private isPast(startAt: Date): boolean {
+    return startAt.getTime() < Date.now() - 60_000;
+  }
+
+  /**
+   * Refuse a past start time UNLESS the caller is allowed to backdate.
+   *
+   * Staff need to record what actually happened — a walk-in served this morning,
+   * a visit someone forgot to enter last week — and a system that cannot be told
+   * about the past forces them to either lie about the time or keep the books
+   * somewhere else. Clients get no such latitude: a self-service booking is a
+   * request for a future slot, and one placed in the past is either a mistake or
+   * an attempt to occupy a slot that cannot be honoured.
+   */
+  private assertStartAllowed(startAt: Date, allowPast: boolean) {
+    if (allowPast) return;
+    if (this.isPast(startAt)) {
       throw AppException.badRequest(ErrorCode.PAST_DATE, 'Cannot book a time in the past');
     }
   }
