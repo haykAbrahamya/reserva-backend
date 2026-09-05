@@ -56,6 +56,15 @@ const envSchema = z.object({
   BACKOFFICE_URL: z.string().default('https://backoffice.reserva.am'),
 
   /**
+   * Public origin of the vacancies board, for absolute URLs in the sitemap it
+   * cannot generate for itself (only the database knows which listings are
+   * live). Declared here so the variable is discoverable and defaulted in one
+   * place; the board controller reads it at module scope, since a constant
+   * string does not justify injecting ConfigService.
+   */
+  VACANCIES_URL: z.string().default('https://vacancies.reserva.am'),
+
+  /**
    * Where uploaded partner images (gallery photos) are written on disk. Served
    * back as static files under /uploads. Default is a repo-local folder for dev;
    * in prod point it at a persistent path (e.g. /var/www/reserva/uploads) that

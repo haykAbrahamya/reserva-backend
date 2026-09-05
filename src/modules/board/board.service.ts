@@ -87,6 +87,26 @@ export class BoardService {
     return { vacancy: detailView(row), moreFromSalon: more.map(cardView) };
   }
 
+  /**
+   * Every live listing, for the sitemap.
+   *
+   * Deliberately generated per request rather than baked into the frontend's
+   * static sitemap. A listing appears when a salon publishes it and disappears
+   * the moment it expires or the salon's entitlement lapses — a file frozen at
+   * deploy time would keep advertising both, and a job board that sends
+   * searchers to filled positions loses the trust it has to earn once.
+   *
+   * `liveWhere` is the same predicate the board lists by, so the sitemap can
+   * never advertise a URL the detail page would 404.
+   */
+  async sitemapEntries() {
+    return this.prisma.vacancy.findMany({
+      where: this.liveWhere(),
+      select: { id: true, updatedAt: true },
+      orderBy: { publishedAt: 'desc' },
+    });
+  }
+
   // -- filter facets -----------------------------------------
 
   /**
