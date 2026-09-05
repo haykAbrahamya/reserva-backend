@@ -8,6 +8,19 @@ import { liveVacancyWhere } from '@/modules/vacancies/vacancy-visibility';
 import { CARD_SELECT, DETAIL_SELECT, cardView, detailView } from './board.view';
 import type { BoardPayType, BoardQuery } from './dto/board.dto';
 
+/**
+ * Below this, a free-text query is not resolved against the role and place
+ * catalogs: one character matches most of a catalog and narrows nothing.
+ */
+const MIN_CATALOG_SEARCH_LENGTH = 2;
+
+/**
+ * Ceiling on the id list gathered from translated titles. Generous enough that
+ * no realistic board reaches it, present so the IN (...) list cannot grow
+ * without bound as the board does.
+ */
+const I18N_MATCH_CAP = 2000;
+
 /** How many other listings from the same salon the detail page offers. */
 const MORE_FROM_SALON = 4;
 
@@ -34,7 +47,7 @@ export class BoardService {
   // -- list --------------------------------------------------
 
   async list(q: BoardQuery) {
-    const where = this.buildWhere(q);
+    const where = await this.buildWhere(q);
 
     const [rows, total] = await Promise.all([
       this.prisma.vacancy.findMany({
@@ -196,7 +209,88 @@ export class BoardService {
 
   // -- where builder -----------------------------------------
 
-  private buildWhere(q: BoardQuery): Prisma.VacancyWhereInput {
+  /**
+   * Resolve free text against the things a card actually displays but the
+   * vacancy row does not store: catalog role names, catalog place names, and
+   * the localized title/description blobs.
+   *
+   * Raw SQL rather than Prisma filters, because all three live in `jsonb` or in
+   * a `text[]` of aliases, and Prisma's JSON filters are case-SENSITIVE —
+   * useless for a search box, where someone typing "կոլորիստ" must find
+   * "Կոլորիստ". Postgres `ILIKE` on an extracted path is case-insensitive in
+   * every script, Armenian included.
+   *
+   * Extracted paths (`->>'hy'`) rather than casting the whole blob to text: a
+   * two-letter query like "ru" would otherwise match the KEY of every row's
+   * translation object and return the entire board.
+   */
+  private async textMatches(text: string): Promise<{
+    specialtyKeys: string[];
+    areaKeys: string[];
+    vacancyIds: string[];
+  }> {
+    const term = text.trim();
+    // One character matches nearly everything and answers nothing. The base
+    // columns are still searched for it by the caller's Prisma clause.
+    if (term.length < MIN_CATALOG_SEARCH_LENGTH) {
+      return { specialtyKeys: [], areaKeys: [], vacancyIds: [] };
+    }
+
+    // `%` and `_` are LIKE wildcards; a reader typing them means the characters.
+    const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+    const [specialties, areas, vacancies] = await Promise.all([
+      this.prisma.$queryRaw<{ key: string }[]>`
+        SELECT "key" FROM "specialties"
+        WHERE "active"
+          AND ("name" ILIKE ${pattern}
+            OR "roleName" ILIKE ${pattern}
+            OR "nameI18n"->>'hy' ILIKE ${pattern}
+            OR "nameI18n"->>'ru' ILIKE ${pattern}
+            OR "roleNameI18n"->>'hy' ILIKE ${pattern}
+            OR "roleNameI18n"->>'ru' ILIKE ${pattern}
+            OR EXISTS (SELECT 1 FROM unnest("aliases") a WHERE a ILIKE ${pattern}))
+      `,
+      this.prisma.$queryRaw<{ key: string }[]>`
+        SELECT "key" FROM "areas"
+        WHERE "active"
+          AND ("name" ILIKE ${pattern}
+            OR "nameI18n"->>'hy' ILIKE ${pattern}
+            OR "nameI18n"->>'ru' ILIKE ${pattern}
+            OR EXISTS (SELECT 1 FROM unnest("aliases") a WHERE a ILIKE ${pattern}))
+      `,
+      /*
+       * Ids, not a predicate, because this cannot be expressed as a Prisma
+       * `where` and still be case-insensitive. Capped: the result feeds an
+       * `IN (...)` list, and an unbounded one would grow with the board. The
+       * cap only ever drops listings that matched on a TRANSLATED title while
+       * matching nothing else, which is the narrowest slice of any search.
+       */
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT v."id" FROM "vacancies" v
+        WHERE v."deletedAt" IS NULL
+          AND v."status" = 'published'
+          AND (v."titleI18n"->>'hy' ILIKE ${pattern}
+            OR v."titleI18n"->>'ru' ILIKE ${pattern}
+            OR v."descriptionI18n"->>'hy' ILIKE ${pattern}
+            OR v."descriptionI18n"->>'ru' ILIKE ${pattern}
+            OR EXISTS (
+              SELECT 1 FROM "partners" p
+              WHERE p."id" = v."partnerId"
+                AND (p."nameI18n"->>'hy' ILIKE ${pattern}
+                  OR p."nameI18n"->>'ru' ILIKE ${pattern})))
+        LIMIT ${I18N_MATCH_CAP}
+      `,
+    ]);
+
+    return {
+      specialtyKeys: specialties.map((r) => r.key),
+      areaKeys: areas.map((r) => r.key),
+      vacancyIds: vacancies.map((r) => r.id),
+    };
+  }
+
+  private async buildWhere(q: BoardQuery): Promise<Prisma.VacancyWhereInput> {
     const filters: Prisma.VacancyWhereInput[] = [this.liveWhere()];
 
     /*
@@ -233,18 +327,76 @@ export class BoardService {
     if (pay) filters.push(pay);
 
     if (q.q) {
-      // Free text stays on the listing's own words and the salon's name. Role
-      // and place names are deliberately NOT searched here: the client holds
-      // the entire specialty and area catalog, aliases included, so it resolves
-      // "kolorist" or "davtashen" into real keys and sends those as filters.
-      // That is faster, and it finds listings whose author never typed the word.
-      filters.push({
-        OR: [
-          { title: { contains: q.q, mode: 'insensitive' } },
-          { description: { contains: q.q, mode: 'insensitive' } },
-          { partner: { name: { contains: q.q, mode: 'insensitive' } } },
-        ],
-      });
+      /*
+       * Free text has to reach the words the READER can see, which are mostly
+       * not on the vacancy row.
+       *
+       * This clause used to cover `title`, `description` and the salon name
+       * only, on the theory that the client would resolve role and place names
+       * against its own catalog and send keys instead. It never did — and even
+       * if it had, two thirds of the board would still have been unreachable:
+       *
+       *  - a listing with no title of its own renders `specialty.roleName`
+       *    (20 of 31 live listings do), and that word lives in the catalog
+       *  - a listing WITH a title shows its localized variant from `titleI18n`,
+       *    while only the base `title` column was being matched
+       *
+       * So searching "Մատնահարդար" — a word plainly printed on a card — matched
+       * nothing at all. Both are resolved server-side now, in one place, so a
+       * shared link finds the same listings the person who sent it saw.
+       */
+      const { specialtyKeys, areaKeys, vacancyIds } = await this.textMatches(q.q);
+
+      /*
+       * Prisma's `contains` drops the term into a LIKE pattern WITHOUT escaping
+       * it, so a typed `%` really is a wildcard: searching "%" returned the
+       * entire board, which reads as "search ignored my input". The raw queries
+       * above escape properly; these three cannot, so the wildcards are removed
+       * from the term they see instead. "50%" still finds a title containing
+       * "50" — marginally broader, never wrong — and a query that was ONLY
+       * wildcards leaves nothing to match, which must not become `contains: ''`
+       * (that matches every row).
+       */
+      const literal = q.q.replace(/[%_]/g, '');
+      const baseColumns: Prisma.VacancyWhereInput[] = literal
+        ? [
+            { title: { contains: literal, mode: 'insensitive' } },
+            { description: { contains: literal, mode: 'insensitive' } },
+            { partner: { name: { contains: literal, mode: 'insensitive' } } },
+          ]
+        : [];
+
+      const textClauses: Prisma.VacancyWhereInput[] = [
+          ...baseColumns,
+          // A matched role, e.g. "Մատնահարդար" / "маникюрша" / "nail master".
+          ...(specialtyKeys.length ? [{ specialtyKey: { in: specialtyKeys } }] : []),
+          // A matched place, expanded to its children exactly as the area
+          // FILTER does — otherwise typing "Երևան" and clicking "Yerevan"
+          // would return different listings.
+          ...(areaKeys.length
+            ? [
+                {
+                  location: {
+                    area: { OR: [{ key: { in: areaKeys } }, { parentKey: { in: areaKeys } }] },
+                  },
+                },
+              ]
+            : []),
+          // Listings whose localized title/description matched.
+          ...(vacancyIds.length ? [{ id: { in: vacancyIds } }] : []),
+      ];
+
+      /*
+       * A search that matched nothing must return nothing.
+       *
+       * Prisma reads `OR: []` as "no constraint" and hands back the whole
+       * board, so the one case where every clause dropped out — a query made
+       * entirely of wildcards — silently became "show everything". The empty
+       * `id in ()` is the explicit way to say no rows.
+       */
+      filters.push(
+        textClauses.length ? { OR: textClauses } : { id: { in: [] } },
+      );
     }
 
     return { AND: filters };
