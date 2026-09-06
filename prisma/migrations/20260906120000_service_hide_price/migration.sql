@@ -1,0 +1,17 @@
+-- Let a salon keep a service's price off its public page.
+--
+-- A DISPLAY choice, not a missing value. The price stays required, stays
+-- captured onto every booking as `priceAtBooking`, and stays visible to staff
+-- in the backoffice — so revenue reporting is untouched. Some treatments are
+-- genuinely quoted after a consultation, and a salon that cannot hide a number
+-- either publishes a misleading one or leaves the service off the page.
+--
+-- Hiding is enforced by REDACTION on the way out of the server (the public
+-- serializer nulls price/priceMax), not by asking the browser not to render it.
+-- A flag the client is trusted to respect leaves the number one devtools panel
+-- away, which is not hiding it.
+--
+-- Strictly additive: one new column with a default that reproduces today's
+-- behaviour exactly. Every existing service keeps publishing its price, because
+-- false is what they all get.
+ALTER TABLE "services" ADD COLUMN "hidePrice" BOOLEAN NOT NULL DEFAULT false;

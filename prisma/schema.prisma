@@ -527,6 +527,19 @@ model Service {
   price           Int
   /// Upper bound for a range service; null for fixed-price services.
   priceMax        Int?
+  /// Keep this price off the public page.
+  ///
+  /// A DISPLAY choice, not a missing value: the price is still stored, still
+  /// captured onto every booking as `priceAtBooking`, and still shown to staff
+  /// in the backoffice. Revenue reporting is unaffected — the salon simply does
+  /// not want the number quoted before a consultation, which is normal for
+  /// treatments priced per head.
+  ///
+  /// Enforced by REDACTION, not by hiding in the UI: the public serializer
+  /// nulls `price`/`priceMax` before they leave the server (see
+  /// PartnersService.getPublicBySlug). A flag the client is trusted to respect
+  /// would leave the number one devtools panel away, which is not hiding it.
+  hidePrice       Boolean          @default(false)
   /// Duration in minutes.
   duration        Int
   /// How often this service should be repeated, in TOTAL DAYS (e.g. 40 = "1

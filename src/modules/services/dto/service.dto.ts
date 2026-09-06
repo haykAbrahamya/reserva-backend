@@ -16,6 +16,15 @@ const serviceFields = z.object({
   price: z.number().int().min(0),
   /** Upper bound; required for range, must be null/absent for fixed. */
   priceMax: z.number().int().min(0).nullable().optional(),
+  /**
+   * Keep this price off the public page.
+   *
+   * Display only — the price is still required, still captured onto every
+   * booking, and still shown to staff. It is redacted server-side on the public
+   * payload, so the number never reaches a browser that is not allowed to see
+   * it.
+   */
+  hidePrice: z.boolean().optional(),
   duration: z.number().int().min(5).max(600), // minutes
   /** Recurrence interval in TOTAL DAYS (null = no repeat). Max ~5 years. */
   repeatEveryDays: z.number().int().min(1).max(1825).nullable().optional(),

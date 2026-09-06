@@ -102,7 +102,7 @@ export class PartnersService {
     // Enrich each specialist with its computed rating (avg + count) so every
     // place that shows a specialist in the client app can show real stars.
     const aggregates = await this.reviews.aggregatesFor(partner.specialists.map((s) => s.id));
-    return serializePartner(partner, aggregates);
+    return serializePartner({ ...partner, services: redactHiddenPrices(partner.services) }, aggregates);
   }
 
   /**
@@ -263,6 +263,28 @@ export class PartnersService {
     });
     if (!p) throw AppException.notFound('Partner not found');
   }
+}
+
+type PricedService = { hidePrice?: boolean; price?: number | null; priceMax?: number | null };
+
+/**
+ * Strip the price from services the salon has chosen not to publish.
+ *
+ * Done HERE, on the way out of the server, rather than by asking the client not
+ * to render it. A flag the browser is trusted to respect leaves the number in
+ * the payload, one devtools panel — or one `curl` — away, which is not hiding
+ * it. The client cannot show what it was never sent.
+ *
+ * `hidePrice` still travels, because the page has to say something in the
+ * price's place ("on request") rather than silently showing a gap.
+ *
+ * Nulled rather than deleted: an absent key reads as "old payload" to a client
+ * and a null reads as "deliberately withheld", and only one of those is true.
+ */
+function redactHiddenPrices<T extends PricedService>(services: T[] | undefined): T[] {
+  return (services ?? []).map((svc) =>
+    svc.hidePrice ? { ...svc, price: null, priceMax: null } : svc,
+  );
 }
 
 type SpecialistWithServices = { id?: string; services?: { serviceId: string }[] } & Record<string, unknown>;
