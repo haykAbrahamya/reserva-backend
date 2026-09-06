@@ -1,15 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
-import sharp from 'sharp';
 
 import { PrismaService } from '@/prisma/prisma.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
-import { newId } from '@/common/ids';
-import type { Env } from '@/config/env.config';
+import {
+  ImageStorageService,
+  IMAGE_PRESETS,
+  assertImage,
+  type UploadedImage,
+} from '@/common/media/image-storage.service';
 
 /** A gallery / works tile. Three shapes:
  *  - simple photo: `{ url }` (older items have no `type` → treated as simple)
@@ -28,34 +28,21 @@ export interface GalleryItem {
 export type GalleryList = 'gallery' | 'works';
 
 const MAX_TILES = 12;
-const MAX_DIMENSION = 1600; // px — downscale anything larger
-const WEBP_QUALITY = 80;
 
+/**
+ * A partner's photo lists.
+ *
+ * What is left here after the image pipeline moved to ImageStorageService is
+ * the part that is genuinely about galleries: the tile shapes, the cap, what a
+ * before/after pair means, and how a reorder is applied without losing a tile
+ * the client did not mention.
+ */
 @Injectable()
 export class GalleryService {
-  private readonly logger = new Logger(GalleryService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService<Env, true>,
+    private readonly images: ImageStorageService,
   ) {}
-
-  private get uploadsDir(): string {
-    return resolve(this.config.get('UPLOADS_DIR', { infer: true }));
-  }
-
-  /** Public URL base that maps to uploadsDir. Empty env → same-origin /uploads. */
-  private get publicBase(): string {
-    return this.config.get('UPLOADS_PUBLIC_URL', { infer: true }) || '/uploads';
-  }
-
-  /** Build the public URL for a stored file path (partnerId/file.webp). */
-  private publicUrl(rel: string): string {
-    return `${this.publicBase}/${rel}`;
-  }
-
-  /** Which presentation photo list a tile belongs to. */
-  // (declared above the methods so callers read clearly)
 
   private async readGallery(partnerId: string, list: GalleryList = 'gallery'): Promise<GalleryItem[]> {
     const pres = await this.prisma.partnerPresentation.findUnique({
@@ -75,34 +62,34 @@ export class GalleryService {
     });
   }
 
-  /**
-   * Process + persist an uploaded image: downscale large photos and re-encode to
-   * WebP (keeps disk small + the public page fast), write to
-   * `<uploadsDir>/<partnerId>/<uuid>.webp`, append to the gallery JSON and return
-   * the updated gallery.
-   */
-  async addImage(
-    partnerId: string,
-    file: { buffer: Buffer; mimetype: string },
-    label = '',
-    list: GalleryList = 'gallery',
-  ): Promise<GalleryItem[]> {
-    if (!file?.buffer?.length) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'No image file was provided');
-    }
-    if (!file.mimetype?.startsWith('image/')) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'Only image files are allowed');
-    }
-
-    const gallery = await this.readGallery(partnerId, list);
+  /** Reject a write that would take a list past its cap. */
+  private assertRoom(gallery: GalleryItem[]) {
     if (gallery.length >= MAX_TILES) {
       throw AppException.badRequest(
         ErrorCode.UPLOAD_FAILED,
         `You can upload up to ${MAX_TILES} images`,
       );
     }
+  }
 
-    const url = await this.processAndStore(partnerId, file);
+  /**
+   * Process + persist an uploaded image, append it to the list and return the
+   * updated list.
+   */
+  async addImage(
+    partnerId: string,
+    file: UploadedImage,
+    label = '',
+    list: GalleryList = 'gallery',
+  ): Promise<GalleryItem[]> {
+    // Checked before the cap so "that is not an image" wins over "you are full"
+    // — the more useful of the two messages when both are true.
+    assertImage(file);
+
+    const gallery = await this.readGallery(partnerId, list);
+    this.assertRoom(gallery);
+
+    const url = await this.images.store(partnerId, file, IMAGE_PRESETS.photo);
     const next: GalleryItem[] = [...gallery, { type: 'simple', url, label: label.slice(0, 80) }];
     await this.writeGallery(partnerId, next, list);
     return next;
@@ -115,20 +102,22 @@ export class GalleryService {
    */
   async addBeforeAfter(
     partnerId: string,
-    before: { buffer: Buffer; mimetype: string },
-    after: { buffer: Buffer; mimetype: string },
+    before: UploadedImage,
+    after: UploadedImage,
     label = '',
     list: GalleryList = 'works',
   ): Promise<GalleryItem[]> {
     if (!before?.buffer?.length || !after?.buffer?.length) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'Both before and after images are required');
+      throw AppException.badRequest(
+        ErrorCode.UPLOAD_FAILED,
+        'Both before and after images are required',
+      );
     }
     const gallery = await this.readGallery(partnerId, list);
-    if (gallery.length >= MAX_TILES) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, `You can upload up to ${MAX_TILES} images`);
-    }
-    const beforeUrl = await this.processAndStore(partnerId, before);
-    const afterUrl = await this.processAndStore(partnerId, after);
+    this.assertRoom(gallery);
+
+    const beforeUrl = await this.images.store(partnerId, before, IMAGE_PRESETS.photo);
+    const afterUrl = await this.images.store(partnerId, after, IMAGE_PRESETS.photo);
     const next: GalleryItem[] = [
       ...gallery,
       { type: 'beforeAfter', beforeUrl, afterUrl, label: label.slice(0, 80) },
@@ -137,71 +126,23 @@ export class GalleryService {
     return next;
   }
 
-  /** Validate, downscale + re-encode to WebP, write to disk, return public URL. */
-  private async processAndStore(
-    partnerId: string,
-    file: { buffer: Buffer; mimetype: string },
-  ): Promise<string> {
-    if (!file?.buffer?.length) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'No image file was provided');
-    }
-    if (!file.mimetype?.startsWith('image/')) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'Only image files are allowed');
-    }
-    let webp: Buffer;
-    try {
-      webp = await sharp(file.buffer)
-        .rotate() // honor EXIF orientation from phone photos
-        .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: WEBP_QUALITY })
-        .toBuffer();
-    } catch (err) {
-      this.logger.warn(`sharp failed to process upload for ${partnerId}: ${String(err)}`);
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'That image could not be processed');
-    }
-    const fileName = `${newId()}.webp`;
-    const dir = join(this.uploadsDir, partnerId);
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, fileName), webp);
-    return this.publicUrl(`${partnerId}/${fileName}`);
-  }
-
-  /**
-   * Remove a tile by its url. Deletes the file from disk too (best-effort — a
-   * missing file never blocks the DB update). Returns the updated gallery.
-   */
   /** Process + persist a brand logo; store its url on the presentation. */
-  async setLogo(
-    partnerId: string,
-    file: { buffer: Buffer; mimetype: string },
-  ): Promise<{ logoUrl: string }> {
-    if (!file?.buffer?.length) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'No image file was provided');
-    }
-    if (!file.mimetype?.startsWith('image/')) {
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'Only image files are allowed');
-    }
-    let webp: Buffer;
-    try {
-      webp = await sharp(file.buffer)
-        .rotate()
-        .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 90 })
-        .toBuffer();
-    } catch (err) {
-      this.logger.warn(`sharp failed to process logo for ${partnerId}: ${String(err)}`);
-      throw AppException.badRequest(ErrorCode.UPLOAD_FAILED, 'That image could not be processed');
-    }
-    const fileName = `logo-${newId()}.webp`;
-    const dir = join(this.uploadsDir, partnerId);
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, fileName), webp);
-    const logoUrl = this.publicUrl(`${partnerId}/${fileName}`);
+  async setLogo(partnerId: string, file: UploadedImage): Promise<{ logoUrl: string }> {
+    const existing = await this.prisma.partnerPresentation.findUnique({
+      where: { partnerId },
+      select: { logoUrl: true },
+    });
+
+    const logoUrl = await this.images.store(partnerId, file, IMAGE_PRESETS.logo);
     await this.prisma.partnerPresentation.upsert({
       where: { partnerId },
       create: { partnerId, logoUrl },
       update: { logoUrl },
     });
+
+    // Drop the old mark only after the new one is committed.
+    if (existing?.logoUrl) await this.images.remove(partnerId, existing.logoUrl);
+
     return { logoUrl };
   }
 
@@ -211,46 +152,34 @@ export class GalleryService {
       where: { partnerId },
       select: { logoUrl: true },
     });
-    const url = pres?.logoUrl ?? '';
-    const marker = `/${partnerId}/`;
-    const idx = url.lastIndexOf(marker);
-    if (idx !== -1) {
-      const fileName = url.slice(idx + marker.length);
-      if (fileName && !fileName.includes('/') && !fileName.includes('..')) {
-        try { await unlink(join(this.uploadsDir, partnerId, fileName)); } catch { /* gone */ }
-      }
-    }
     await this.prisma.partnerPresentation.update({ where: { partnerId }, data: { logoUrl: '' } });
+    if (pres?.logoUrl) await this.images.remove(partnerId, pres.logoUrl);
     return { logoUrl: '' };
   }
 
-  async removeImage(partnerId: string, url: string, list: GalleryList = 'gallery'): Promise<GalleryItem[]> {
+  /**
+   * Remove a tile by its url. Deletes the file(s) from disk too (best-effort — a
+   * missing file never blocks the DB update). Returns the updated list.
+   */
+  async removeImage(
+    partnerId: string,
+    url: string,
+    list: GalleryList = 'gallery',
+  ): Promise<GalleryItem[]> {
     const gallery = await this.readGallery(partnerId, list);
     // A tile matches if the given url is its photo OR either before/after image.
     const matches = (g: GalleryItem) => g.url === url || g.beforeUrl === url || g.afterUrl === url;
     const removed = gallery.filter(matches);
     const next = gallery.filter((g) => !matches(g));
 
-    // Delete every file belonging to the removed tile(s) from this partner's
-    // folder (defensive: never let a crafted url escape the partner's directory).
-    const marker = `/${partnerId}/`;
+    await this.writeGallery(partnerId, next, list);
+
+    // Every file belonging to the removed tile(s). `removeMany` is scoped to
+    // this partner's folder, so a crafted url cannot reach outside it.
     for (const tile of removed) {
-      for (const u of [tile.url, tile.beforeUrl, tile.afterUrl]) {
-        if (!u) continue;
-        const idx = u.lastIndexOf(marker);
-        if (idx === -1) continue;
-        const fileName = u.slice(idx + marker.length);
-        if (fileName && !fileName.includes('/') && !fileName.includes('..')) {
-          try {
-            await unlink(join(this.uploadsDir, partnerId, fileName));
-          } catch {
-            /* file already gone — ignore */
-          }
-        }
-      }
+      await this.images.removeMany(partnerId, [tile.url, tile.beforeUrl, tile.afterUrl]);
     }
 
-    await this.writeGallery(partnerId, next, list);
     return next;
   }
 

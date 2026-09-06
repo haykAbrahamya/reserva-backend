@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type VacancyApplicationStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { VacancyApplicationNotifier } from './application-notifier.service';
 import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
@@ -34,7 +35,55 @@ const APPLICATION_SELECT = {
   status: true,
   seenAt: true,
   createdAt: true,
+  /*
+   * The account behind the application, when there was one.
+   *
+   * Read so the salon can open the applicant's PROFILE — the portfolio, the
+   * years, the districts they will travel to — instead of judging a name and a
+   * phone number. It is the difference between an inbox and a shortlist.
+   *
+   * `publicProfile` is selected rather than assumed: it is the gate below.
+   */
+  professional: {
+    select: { id: true, publicProfile: true, avatarUrl: true },
+  },
 } satisfies Prisma.VacancyApplicationSelect;
+
+/** One application row, as selected above. Exported for the view's spec. */
+export type ApplicationRow = Prisma.VacancyApplicationGetPayload<{
+  select: typeof APPLICATION_SELECT;
+}>;
+
+/**
+ * Decide what an application says about the account behind it.
+ *
+ * The privacy line, in one function: an application carries what the applicant
+ * TYPED into it — their name, their number, their note — because they typed it
+ * into this salon's form. Their profile is a separate thing they may not have
+ * published, so nothing from it survives unless they did.
+ *
+ * That is why `profileId` is null rather than the row being hidden: the salon
+ * still learns this is a registered specialist rather than an anonymous
+ * walk-up, which is genuinely useful triage, without being handed a page its
+ * owner has kept closed. And the avatar rides the same gate as the link — if
+ * the profile is public, so is the picture on it.
+ */
+export function toApplicationView(row: ApplicationRow) {
+  const pro = row.professional;
+  const published = Boolean(pro?.publicProfile);
+  const { professional: _professional, ...application } = row;
+
+  return {
+    ...application,
+    account: {
+      /** They applied while signed in, so there is a person to look up. */
+      hasAccount: pro !== null,
+      /** Non-null only when they published their profile. */
+      profileId: published ? (pro?.id ?? null) : null,
+      avatarUrl: published ? (pro?.avatarUrl ?? '') : '',
+    },
+  };
+}
 
 /**
  * Applications to a listing — the single owner of the `vacancy_applications`
@@ -47,7 +96,10 @@ const APPLICATION_SELECT = {
  */
 @Injectable()
 export class VacancyApplicationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifier: VacancyApplicationNotifier,
+  ) {}
 
   // -- public side -------------------------------------------
 
@@ -67,7 +119,17 @@ export class VacancyApplicationsService {
   async applyFromBoard(vacancyId: string, dto: ApplicationInput, professionalId?: string | null) {
     const vacancy = await this.prisma.vacancy.findFirst({
       where: { AND: [{ id: vacancyId }, liveVacancyWhere()] },
-      select: { id: true, applyMode: true },
+      /* Also what the notification needs to address itself: which partner,
+         which branch (that decides which managers hear about it), and what the
+         listing is called. */
+      select: {
+        id: true,
+        applyMode: true,
+        partnerId: true,
+        locationId: true,
+        title: true,
+        specialty: { select: { roleName: true } },
+      },
     });
     if (!vacancy) throw AppException.notFound('This listing is no longer available');
 
@@ -130,6 +192,22 @@ export class VacancyApplicationsService {
       select: { id: true },
     });
 
+    /*
+     * Tell the salon. Deliberately NOT awaited into the applicant's response
+     * path in a way that can fail it — the notifier swallows its own errors, so
+     * a dead push endpoint or a missing recipient can never turn a successful
+     * application into an error for the person who made it.
+     */
+    await this.notifier.applicationReceived({
+      applicationId: row.id,
+      vacancyId,
+      partnerId: vacancy.partnerId,
+      locationId: vacancy.locationId,
+      applicantName: dto.name,
+      role: vacancy.title.trim() || vacancy.specialty.roleName,
+      updated: existing !== null,
+    });
+
     return {
       id: row.id,
       /** True when this replaced an earlier submission, so the page can say so
@@ -151,11 +229,12 @@ export class VacancyApplicationsService {
   async listForVacancy(partnerId: string, vacancyId: string, scopeLocationId: string | null) {
     await this.assertVacancy(partnerId, vacancyId, scopeLocationId);
 
-    return this.prisma.vacancyApplication.findMany({
+    const rows = await this.prisma.vacancyApplication.findMany({
       where: { vacancyId },
       select: APPLICATION_SELECT,
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(toApplicationView);
   }
 
   /**
@@ -211,7 +290,7 @@ export class VacancyApplicationsService {
     });
     if (!existing) throw AppException.notFound('Application not found');
 
-    return this.prisma.vacancyApplication.update({
+    const row = await this.prisma.vacancyApplication.update({
       where: { id: applicationId },
       data: {
         status,
@@ -219,6 +298,7 @@ export class VacancyApplicationsService {
       },
       select: APPLICATION_SELECT,
     });
+    return toApplicationView(row);
   }
 
   /** The listing must belong to this partner and to a branch the caller owns. */

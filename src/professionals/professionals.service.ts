@@ -10,6 +10,7 @@ import { ErrorCode } from '@/common/errors/error-codes';
 import { newId, newTokenId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import type { ProfessionalJwtPayload } from './professional.types';
+import { toPublicProfessional, type PublicProfessional } from './professional.view';
 import type { RegisterProfessionalDto, UpdateProfessionalDto } from './dto/professional.dto';
 
 interface Tokens {
@@ -21,19 +22,7 @@ export interface ProfessionalAuthResult extends Tokens {
   professional: PublicProfessional;
 }
 
-/** What the browser is allowed to see about an account. Never the hash. */
-export interface PublicProfessional {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  specialtyKeys: string[];
-  areaKeys: string[];
-  experienceYears: number | null;
-  about: string;
-  cvUrl: string;
-  locale: string;
-}
+export type { PublicProfessional };
 
 /**
  * Professional accounts: register, sign in, profile.
@@ -93,7 +82,7 @@ export class ProfessionalsService {
      * loses the applicant it exists to deliver.
      */
     const tokens = await this.issueTokens(professional);
-    return { ...tokens, professional: toPublic(professional) };
+    return { ...tokens, professional: toPublicProfessional(professional) };
   }
 
   // ── Sessions ──────────────────────────────────────────────
@@ -119,7 +108,7 @@ export class ProfessionalsService {
     });
 
     const tokens = await this.issueTokens(professional);
-    return { ...tokens, professional: toPublic(professional) };
+    return { ...tokens, professional: toPublicProfessional(professional) };
   }
 
   async refresh(refreshToken: string): Promise<ProfessionalAuthResult> {
@@ -143,7 +132,7 @@ export class ProfessionalsService {
     });
 
     const tokens = await this.issueTokens(professional);
-    return { ...tokens, professional: toPublic(professional) };
+    return { ...tokens, professional: toPublicProfessional(professional) };
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -159,7 +148,7 @@ export class ProfessionalsService {
   async me(id: string): Promise<PublicProfessional> {
     const professional = await this.prisma.professional.findUnique({ where: { id } });
     if (!professional || professional.deletedAt) throw AppException.notFound('Account not found');
-    return toPublic(professional);
+    return toPublicProfessional(professional);
   }
 
   async update(id: string, dto: UpdateProfessionalDto): Promise<PublicProfessional> {
@@ -184,10 +173,12 @@ export class ProfessionalsService {
         ...(dto.areaKeys !== undefined && { areaKeys: dedupe(dto.areaKeys) }),
         ...(dto.experienceYears !== undefined && { experienceYears: dto.experienceYears }),
         ...(dto.about !== undefined && { about: dto.about.trim() }),
+        ...(dto.publicProfile !== undefined && { publicProfile: dto.publicProfile }),
+        ...(dto.showContact !== undefined && { showContact: dto.showContact }),
         ...(dto.locale !== undefined && { locale: dto.locale }),
       },
     });
-    return toPublic(updated);
+    return toPublicProfessional(updated);
   }
 
   /**
@@ -318,19 +309,4 @@ function hashToken(token: string): string {
 /** Keys arrive from checkbox lists, so a duplicate is a UI accident, not intent. */
 function dedupe(keys: string[]): string[] {
   return [...new Set(keys.map((k) => k.trim()).filter(Boolean))];
-}
-
-function toPublic(p: Professional): PublicProfessional {
-  return {
-    id: p.id,
-    name: p.name,
-    phone: p.phone,
-    email: p.email ?? '',
-    specialtyKeys: p.specialtyKeys,
-    areaKeys: p.areaKeys,
-    experienceYears: p.experienceYears,
-    about: p.about,
-    cvUrl: p.cvUrl,
-    locale: p.locale,
-  };
 }

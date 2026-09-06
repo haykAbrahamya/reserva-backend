@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "noEmit": true
+  },
+  "ts-node": { "transpileOnly": true, "require": ["tsconfig-paths/register"] },
+  "include": ["prisma/**/*.ts", "src/**/*.ts"]
+}

@@ -993,6 +993,36 @@ model Professional {
   /// adding upload later is a route, not a migration.
   cvUrl String @default("")
 
+  /// Profile photo. Empty = fall back to the name initial, exactly as
+  /// Specialist.avatarUrl does — same convention, so the same Avatar component
+  /// renders both without knowing which it was handed.
+  avatarUrl String @default("")
+
+  /// Portfolio tiles: `[{ url, label? }]`.
+  ///
+  /// JSON rather than a table for the same reason PartnerPresentation.works is:
+  /// the list is small, bounded (MAX_PORTFOLIO_PHOTOS), always read whole, and
+  /// never queried BY its contents. A join table would buy ordering semantics
+  /// this already gets for free from array order.
+  photos Json @default("[]")
+
+  /// Whether the profile is reachable at its public URL.
+  ///
+  /// Defaults to FALSE, and that default is the point: an account is created
+  /// mid-application with a name and a phone and nothing else, and a profile in
+  /// that state is not something to publish on someone's behalf. They turn it on
+  /// when it is worth showing.
+  publicProfile Boolean @default(false)
+
+  /// Whether the public profile shows the phone number and email.
+  ///
+  /// Separate from `publicProfile` because they are separate decisions: plenty
+  /// of people will happily show a salon their work and their experience while
+  /// wanting the first contact to come through an application rather than a
+  /// cold call. Off by default — publishing a phone number is not something to
+  /// infer from a click on "make my profile public".
+  showContact Boolean @default(false)
+
   /// UI language they registered in, so mail reaches them in it.
   locale String @default("hy")
 
@@ -1012,6 +1042,9 @@ model Professional {
   @@index([specialtyKeys], type: Gin)
   @@index([areaKeys], type: Gin)
   @@index([active])
+  /// The directory's first filter: every browse query starts from "published,
+  /// live accounts" before it narrows by specialty or area.
+  @@index([publicProfile])
   @@map("professionals")
 }
 
@@ -1290,6 +1323,10 @@ enum NotificationType {
   booking_completed
   booking_noshow
   course_registration
+  /// Somebody applied to one of the partner's vacancies. The salon side of the
+  /// board had no signal at all before this: applications landed in a table and
+  /// waited to be discovered.
+  vacancy_application
 }
 
 /// In-app notification feed — ONE row per recipient user (so read/unread is

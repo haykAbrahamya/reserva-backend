@@ -7,10 +7,12 @@ import { AreasService } from '@/modules/areas/areas.service';
 import { SpecialtiesService } from '@/modules/specialties/specialties.service';
 import { VacancyApplicationsService } from '@/modules/vacancies/applications.service';
 import { BoardService } from './board.service';
+import { ProfessionalsDirectoryService } from './professionals-directory.service';
 import { OptionalProfessionalGuard } from '@/professionals/guards/optional-professional.guard';
 import { CurrentProfessional } from '@/professionals/professional.decorators';
 import type { ProfessionalAuthUser } from '@/professionals/professional.types';
 import { BoardQueryDto, ApplyDto } from './dto/board.dto';
+import { ProfessionalSearchDto } from './dto/professional-search.dto';
 
 /**
  * The board's public origin, for absolute sitemap URLs.
@@ -45,6 +47,7 @@ export class BoardController {
     private readonly areas: AreasService,
     private readonly specialties: SpecialtiesService,
     private readonly applications: VacancyApplicationsService,
+    private readonly directory: ProfessionalsDirectoryService,
   ) {}
 
   /**
@@ -121,6 +124,41 @@ export class BoardController {
     res.set('Content-Type', 'application/xml');
     res.set('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
     res.send(xml);
+  }
+
+  // ── Specialist directory ──────────────────────────────────
+  //
+  // The other direction of the same market: salons searching people, rather
+  // than people searching listings. Public and unauthenticated like everything
+  // else here, and filtered by the same taxonomies — a district key means the
+  // same thing on both sides.
+  //
+  // What a stranger may see is decided in two places and only two:
+  // ProfessionalsDirectoryService.visible (which rows exist at all) and
+  // professional.view.ts (which fields survive). Neither is bypassable from
+  // here, because this controller never touches the model.
+
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
+  @Get('professionals')
+  @ApiOperation({ summary: 'Search specialists available for hire' })
+  professionals(@Query() query: ProfessionalSearchDto) {
+    return this.directory.search(query);
+  }
+
+  /*
+   * Cached far more briefly than a listing.
+   *
+   * A profile is edited by the person looking at it, and someone who has just
+   * fixed their own page and reloaded it must not be shown a stale copy of the
+   * thing they were trying to correct.
+   */
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Header('Cache-Control', 'public, max-age=30, stale-while-revalidate=120')
+  @Get('professionals/:id')
+  @ApiOperation({ summary: 'One public specialist profile' })
+  professional(@Param('id') id: string) {
+    return this.directory.findOne(id);
   }
 
   /**

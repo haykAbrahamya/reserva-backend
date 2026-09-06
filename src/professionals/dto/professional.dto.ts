@@ -78,6 +78,32 @@ export const updateProfessionalSchema = z.object({
   areaKeys,
   experienceYears,
   about: z.string().trim().max(1200).optional(),
+  /** Publish the profile at its public URL. */
+  publicProfile: z.boolean().optional(),
+  /** Show the phone number on that public page. Separate decision, separate field. */
+  showContact: z.boolean().optional(),
   locale,
 });
 export class UpdateProfessionalDto extends createZodDto(updateProfessionalSchema) {}
+
+/**
+ * A stored image url, as the client hands it back to remove or reorder it.
+ *
+ * Validated as a plain bounded string rather than a URL: these are our own
+ * relative paths (`/uploads/pro/<id>/ph-….webp`) as often as absolute ones, and
+ * `z.string().url()` rejects the relative form. The value is never resolved as
+ * a path — ImageStorageService only trusts the segment after `/<scope>/`, and
+ * only when it is a bare filename — so the guarantee that matters is enforced
+ * where the file system is actually touched, not here.
+ */
+const photoUrl = z.string().trim().min(1).max(500);
+
+export const removePhotoSchema = z.object({ url: photoUrl });
+export class RemovePhotoDto extends createZodDto(removePhotoSchema) {}
+
+export const reorderPhotosSchema = z.object({ urls: z.array(photoUrl).max(24) });
+export class ReorderPhotosDto extends createZodDto(reorderPhotosSchema) {}
+
+/** An optional caption sent alongside an uploaded portfolio photo. */
+export const photoLabelSchema = z.object({ label: z.string().trim().max(80).optional() });
+export class PhotoLabelDto extends createZodDto(photoLabelSchema) {}

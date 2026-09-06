@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ProfessionalsController } from './professionals.controller';
 import { ProfessionalsService } from './professionals.service';
+import { ProfessionalMediaService } from './professional-media.service';
 import { ProfessionalAuthGuard } from './guards/professional-auth.guard';
 
 /**
@@ -15,7 +16,7 @@ import { ProfessionalAuthGuard } from './guards/professional-auth.guard';
  */
 @Module({
   controllers: [ProfessionalsController],
-  providers: [ProfessionalsService, ProfessionalAuthGuard],
+  providers: [ProfessionalsService, ProfessionalMediaService, ProfessionalAuthGuard],
   exports: [ProfessionalsService],
 })
 export class ProfessionalsModule {}

@@ -14,8 +14,13 @@ import { VACANCY_PERKS } from '@/modules/vacancies/vacancy-perks';
 
 const MAX_LIST = 40;
 
-/** A repeatable key param, tolerant of both `?k=a&k=b` and `?k=a,b`. */
-const keyList = (max = MAX_LIST) =>
+/**
+ * A repeatable key param, tolerant of both `?k=a&k=b` and `?k=a,b`.
+ *
+ * Exported because the specialist directory filters by the same taxonomies and
+ * must parse them identically — see professional-search.dto.ts.
+ */
+export const keyList = (max = MAX_LIST) =>
   z
     .union([z.string(), z.array(z.string())])
     .optional()

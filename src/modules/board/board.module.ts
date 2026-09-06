@@ -3,6 +3,7 @@ import { OptionalProfessionalGuard } from '@/professionals/guards/optional-profe
 import { VacanciesModule } from '@/modules/vacancies/vacancies.module';
 import { BoardController } from './board.controller';
 import { BoardService } from './board.service';
+import { ProfessionalsDirectoryService } from './professionals-directory.service';
 
 /**
  * The public vacancies board (vacancies.reserva.am).
@@ -19,6 +20,6 @@ import { BoardService } from './board.service';
 @Module({
   imports: [VacanciesModule],
   controllers: [BoardController],
-  providers: [OptionalProfessionalGuard, BoardService],
+  providers: [OptionalProfessionalGuard, BoardService, ProfessionalsDirectoryService],
 })
 export class BoardModule {}

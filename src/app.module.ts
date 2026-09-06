@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 
 import { validateEnv } from './config/env.config';
 import { PrismaModule } from './prisma/prisma.module';
+import { MediaModule } from './common/media/media.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -63,6 +64,7 @@ import { HealthController } from './health.controller';
       serveStaticOptions: { index: false, maxAge: '30d', immutable: true },
     }),
     PrismaModule,
+    MediaModule,
     MailModule,
     ProductsModule,
     AuthModule,
