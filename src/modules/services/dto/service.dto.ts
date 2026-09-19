@@ -10,11 +10,13 @@ const serviceFields = z.object({
   category: z.string().trim().max(60).default(''),
   /** Optional per-language overrides for `category`. */
   categoryI18n: localizedTextSchema,
-  /** 'fixed' → exact `price`. 'range' → `price` (min) .. `priceMax` (max). */
+  /** 'fixed' → exact `price`. 'range' → `price` (min) .. `priceMax` (max), or
+   *  `price` upwards when `priceMax` is null (an open-ended "from X"). */
   priceType: z.enum(['fixed', 'range']).default('fixed'),
   /** Fixed price, or the lower bound of a range. */
   price: z.number().int().min(0),
-  /** Upper bound; required for range, must be null/absent for fixed. */
+  /** Upper bound. Optional for a range (null/absent = open-ended, quoted as
+   *  "from `price`"); must be null/absent for fixed. */
   priceMax: z.number().int().min(0).nullable().optional(),
   /**
    * Keep this price off the public page.
@@ -42,10 +44,16 @@ const refinePrice = (v: {
   price?: number;
   priceMax?: number | null;
 }, ctx: z.RefinementCtx) => {
-  if (v.priceType === 'range') {
-    if (v.priceMax == null) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceMax'], message: 'Range services need an upper price' });
-    } else if (typeof v.price === 'number' && v.priceMax <= v.price) {
+  /*
+   * A range MAY be open-ended: a lower bound and no ceiling, quoted publicly as
+   * "from 5,000 ֏". That is a real pricing choice for work whose cost is only
+   * known after a consultation, not an unfinished form — so a null `priceMax`
+   * is accepted here rather than rejected.
+   *
+   * A ceiling that IS supplied still has to be a genuine one.
+   */
+  if (v.priceType === 'range' && v.priceMax != null) {
+    if (typeof v.price === 'number' && v.priceMax <= v.price) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['priceMax'], message: 'Upper price must be greater than the lower price' });
     }
   }
