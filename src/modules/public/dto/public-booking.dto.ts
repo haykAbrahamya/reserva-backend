@@ -37,5 +37,17 @@ export const publicCreateBookingSchema = z.object({
   notes: z.string().trim().max(1000).optional(),
   /** UI language the booking was made in, for localized reminders later. */
   locale: z.enum(['en', 'hy', 'ru']).optional(),
+  /**
+   * The price the client was shown. When present, the booking is only made at
+   * exactly this price — otherwise PRICE_CHANGED, so a client is never booked
+   * at a price they did not see. Omitted by older clients and for hidden prices.
+   */
+  expectedPrice: z.number().int().min(0).optional(),
+  /**
+   * "Any available": the specialist the page previewed for this time (from
+   * slot-options). Tried first; if they were taken meanwhile, another free
+   * specialist at the same price is used instead.
+   */
+  preferredSpecialistId: z.string().uuid().optional(),
 });
 export class PublicCreateBookingDto extends createZodDto(publicCreateBookingSchema) {}

@@ -497,6 +497,11 @@ model Location {
   /// strip their place and leave any published vacancy unplaceable. Staff
   /// deactivate an area instead — same rule as Product and Specialty.
   area          Area?          @relation(fields: [areaKey], references: [key], onDelete: Restrict)
+  /// Specialists who work at this branch. A specialist may work at several
+  /// branches; `specialists` above is only the ones whose HOME branch this is.
+  specialistLinks SpecialistLocation[]
+  /// This branch's availability and price/duration/capacity overrides per service.
+  serviceSettings LocationService[]
 
   @@index([partnerId, deletedAt])
   /// "which branches are in this area" — the board's filter path.
@@ -566,9 +571,13 @@ model Service {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  partner         Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  specialistLinks SpecialistService[]
-  bookings        Booking[]
+  partner          Partner             @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  specialistLinks  SpecialistService[]
+  bookings         Booking[]
+  /// Per-branch availability and price/duration/capacity overrides.
+  locationSettings LocationService[]
+  /// Per-specialist, per-branch price/duration overrides.
+  specialistPrices SpecialistPrice[]
 
   @@index([partnerId, deletedAt])
   @@index([partnerId, active])
@@ -1098,6 +1107,9 @@ model Specialist {
   reviews        SpecialistReview[]
   /// Courses where this specialist is credited as the tutor (optional link).
   tutoredCourses Course[]            @relation("CourseTutor")
+  /// Branches this specialist works at, each with its own weekly hours. Always
+  /// includes the home branch (`locationId`); a DB trigger guarantees it.
+  locations      SpecialistLocation[]
 
   @@index([partnerId, deletedAt])
   @@index([locationId, active])
@@ -1160,6 +1172,92 @@ model SpecialistTimeOff {
   @@index([specialistId, startAt, endAt])
   @@index([partnerId, startAt])
   @@map("specialist_time_off")
+}
+
+// ── Branches & prices ───────────────────────────────────────
+// A specialist can work at several branches, and a service's price/duration can
+// differ per branch and per specialist. Resolution, most specific first:
+//   SpecialistPrice (specialist @ branch) → LocationService (branch) → Service.
+// Both override tables are SPARSE: no row = inherit, so a partner who sets
+// nothing gets exactly the pre-existing behaviour.
+
+/// Where a specialist works, and when: one row per (specialist, branch).
+///
+/// `Specialist.locationId` stays as the HOME branch and always has a row here
+/// (the `specialists_home_membership` trigger guarantees it, even for code that
+/// predates this table). `Specialist.schedule` mirrors the home row's schedule
+/// for older readers until they are retired.
+model SpecialistLocation {
+  specialistId String
+  locationId   String
+  partnerId    String // denormalized for fast tenant-scoped queries
+  /// Weekly hours AT THIS BRANCH: { mon: { enabled, start, end }, ... }.
+  schedule     Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  specialist Specialist        @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  /// Restrict, like Specialist.location: a branch still staffed must not vanish.
+  location   Location          @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  prices     SpecialistPrice[]
+
+  @@id([specialistId, locationId])
+  @@index([locationId])
+  @@index([partnerId])
+  @@map("specialist_locations")
+}
+
+/// A service as offered at one branch. Sparse: no row = offered there at the
+/// service's own price/duration/capacity. The price fields are one unit — all
+/// null (inherit) or a complete price (CHECK constraint in the migration).
+model LocationService {
+  locationId String
+  serviceId  String
+  partnerId  String // denormalized for fast tenant-scoped queries
+  /// false = not offered at this branch (e.g. no laser machine here).
+  offered    Boolean           @default(true)
+  priceType  ServicePriceType?
+  price      Int?
+  priceMax   Int?
+  /// Minutes; null = inherit.
+  duration   Int?
+  /// Facility services only: concurrent guests at this branch; null = inherit.
+  capacity   Int?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([locationId, serviceId])
+  @@index([serviceId])
+  @@index([partnerId])
+  @@map("location_services")
+}
+
+/// One specialist's own price/duration for one service at one branch. Sparse:
+/// no row = the branch price, else the service default. Can only exist while
+/// the specialist works at that branch (composite FK; removed with the link).
+model SpecialistPrice {
+  specialistId String
+  locationId   String
+  serviceId    String
+  partnerId    String // denormalized for fast tenant-scoped queries
+  priceType    ServicePriceType?
+  price        Int?
+  priceMax     Int?
+  /// Minutes; null = inherit.
+  duration     Int?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  membership SpecialistLocation @relation(fields: [specialistId, locationId], references: [specialistId, locationId], onDelete: Cascade)
+  service    Service            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([specialistId, locationId, serviceId])
+  @@index([serviceId, locationId])
+  @@index([partnerId])
+  @@map("specialist_prices")
 }
 
 // ── Client ──────────────────────────────────────────────────
@@ -1250,6 +1348,11 @@ model Booking {
   priceAtBooking    Int  @default(0)
   /// Upper bound captured at booking time for a range service; null for fixed.
   priceMaxAtBooking Int?
+  /// Price type captured at booking time. A branch or specialist override can
+  /// price a range service as fixed (or the reverse), so completion reads this,
+  /// not the service's current type. Null = booked before this column existed;
+  /// fall back to `service.priceType`, exactly as before.
+  priceTypeAtBooking ServicePriceType?
   /// Exact amount charged, entered when a range-priced booking is completed.
   /// Null for fixed-price bookings (their price is exact) or until captured.
   /// Revenue uses `finalPrice ?? priceAtBooking`.

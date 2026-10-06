@@ -28,6 +28,7 @@ import { SpecialistsModule } from './modules/specialists/specialists.module';
 import { SpecialistReviewsModule } from './modules/specialist-reviews/specialist-reviews.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
+import { PricingModule } from './modules/pricing/pricing.module';
 import { PublicModule } from './modules/public/public.module';
 import { UsersModule } from './modules/users/users.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -79,6 +80,7 @@ import { HealthController } from './health.controller';
     SpecialistsModule,
     SpecialistReviewsModule,
     ClientsModule,
+    PricingModule,
     BookingsModule,
     PublicModule,
     UsersModule,

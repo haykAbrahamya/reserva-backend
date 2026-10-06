@@ -6,6 +6,8 @@ import {
   isWithinWorkingHours,
   computeSlots,
   computeCapacitySlots,
+  overlapsBookableHours,
+  weeklyWorkingWindows,
   MINUTES_PER_DAY,
 } from './availability';
 import type { WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
@@ -355,24 +357,27 @@ describe('isWithinWorkingHours', () => {
 
   it('does not constrain when no schedule covers the date', () => {
     expect(isWithinWorkingHours(null, null, MONDAY, 0, 60)).toBe(true);
-    expect(isWithinWorkingHours(on('tue', '10:00', '19:00'), null, MONDAY, 0, 60)).toBe(true);
+    expect(isWithinWorkingHours({} as WeekScheduleInput, null, MONDAY, 0, 60)).toBe(true);
+  });
+
+  it('refuses a day the specialist’s set hours leave closed', () => {
+    expect(isWithinWorkingHours(on('tue', '10:00', '19:00'), null, MONDAY, 600, 660)).toBe(false);
   });
 });
 
 /**
- * LOAD-BEARING LEGACY BEHAVIOUR — do not "tighten" without a migration.
+ * LOAD-BEARING — never-set schedules follow the branch.
  *
- * `Specialist.schedule` is `Json @default("{}")` and specialists.service fills
- * in a default on create, so the schedule is never null — it is `{}` for anyone
- * whose hours were never configured. The engine therefore treats a schedule
- * with NOTHING to say about a date as "does not constrain" and falls back to the
- * location's hours. Making a date-less schedule mean "closed" instead would make
- * every specialist carrying the `{}` default instantly unbookable.
+ * `Specialist.schedule` is `Json @default("{}")`; specialists created before
+ * defaults existed still hold `{}`. The engine treats such a schedule as "does
+ * not constrain" and falls back to the location's hours. Making it mean
+ * "closed" instead would make every one of those specialists instantly
+ * unbookable.
  *
- * The same rule means a specialist with a DISABLED weekday also inherits the
- * location's hours for that day. That is pre-existing behaviour, unchanged by
- * overnight support, and it is why an overnight location can put early-hours
- * slots on a day the specialist has not explicitly enabled.
+ * A SET schedule is different (since 2026-10): a weekday the specialist has
+ * switched off is closed. It used to inherit the location's hours as well,
+ * which let staff — and "any specialist" assignment — book people on their
+ * day off, while the public day strip already showed that day as closed.
  */
 describe('schedule fallback semantics', () => {
   const locHours = on('mon', '10:00', '13:00');
@@ -389,7 +394,7 @@ describe('schedule fallback semantics', () => {
     ).toEqual(['10:00', '11:00', '12:00']);
   });
 
-  it('falls back to location hours on a weekday the specialist disabled', () => {
+  it('keeps a weekday the specialist switched off closed — set hours are the truth', () => {
     expect(
       computeSlots({
         day: MONDAY,
@@ -398,7 +403,7 @@ describe('schedule fallback semantics', () => {
         specialistSchedule: { mon: { enabled: false, start: '09:00', end: '17:00' } },
         locationHours: locHours,
       }),
-    ).toEqual(['10:00', '11:00', '12:00']);
+    ).toEqual([]);
   });
 
   it('applies the same fallback to working-hours validation', () => {
@@ -415,5 +420,132 @@ describe('schedule fallback semantics', () => {
         locationHours: {} as WeekScheduleInput,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('strict schedule — a specialist at several branches', () => {
+  // Kentron opens Monday 10–13. Their hours AT KENTRON leave Monday closed:
+  // that is a day they work at another branch, so Kentron must not offer them.
+  const kentronHours = on('mon', '10:00', '13:00');
+  const closedHere: WeekScheduleInput = { mon: { enabled: false, start: '09:00', end: '17:00' } };
+
+  it('keeps a day their hours here leave closed closed, instead of falling back to the branch hours', () => {
+    expect(bookableRangesForDate(closedHere, kentronHours, MONDAY, true)).toEqual([]);
+    expect(
+      computeSlots({
+        day: MONDAY,
+        durationMin: 60,
+        stepMin: 60,
+        specialistSchedule: closedHere,
+        locationHours: kentronHours,
+        strictSchedule: true,
+      }),
+    ).toEqual([]);
+    expect(isWithinWorkingHours(closedHere, kentronHours, MONDAY, 600, 660, true)).toBe(false);
+  });
+
+  it('treats an empty schedule at the branch as closed too', () => {
+    expect(bookableRangesForDate({} as WeekScheduleInput, kentronHours, MONDAY, true)).toEqual([]);
+    expect(isWithinWorkingHours({} as WeekScheduleInput, kentronHours, MONDAY, 600, 660, true)).toBe(false);
+  });
+
+  it('still intersects an open day with the branch hours', () => {
+    expect(
+      computeSlots({
+        day: MONDAY,
+        durationMin: 60,
+        stepMin: 60,
+        specialistSchedule: on('mon', '11:00', '17:00'),
+        locationHours: kentronHours,
+        strictSchedule: true,
+      }),
+    ).toEqual(['11:00', '12:00']);
+    expect(isWithinWorkingHours(on('mon', '11:00', '17:00'), kentronHours, MONDAY, 660, 720, true)).toBe(true);
+    expect(isWithinWorkingHours(on('mon', '11:00', '17:00'), kentronHours, MONDAY, 600, 660, true)).toBe(false);
+  });
+
+  it('honours the previous night’s shift at this branch', () => {
+    const overnight = on('sun', '18:00', '02:30');
+    expect(isWithinWorkingHours(overnight, {} as WeekScheduleInput, MONDAY, 60, 120, true)).toBe(true);
+  });
+
+  it('applies to single-branch specialists too — except a never-set schedule', () => {
+    expect(bookableRangesForDate(closedHere, kentronHours, MONDAY)).toEqual([]);
+    expect(isWithinWorkingHours(closedHere, kentronHours, MONDAY, 600, 660)).toBe(false);
+    expect(isWithinWorkingHours({} as WeekScheduleInput, kentronHours, MONDAY, 600, 660)).toBe(true);
+  });
+});
+
+describe('overlapsBookableHours — busy at another branch', () => {
+  // Her hours at THIS branch: Monday 15:00–20:00 only; the branch opens 10:00–20:00.
+  const hereHours = on('mon', '15:00', '20:00');
+  const branchHours = on('mon', '10:00', '20:00');
+  const at = (d: Date, hh: number, mm = 0) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm);
+
+  it('shows a booking elsewhere that eats into her hours here', () => {
+    expect(overlapsBookableHours(hereHours, branchHours, at(MONDAY, 14, 30), at(MONDAY, 15, 30), true)).toBe(true);
+    expect(overlapsBookableHours(hereHours, branchHours, at(MONDAY, 17), at(MONDAY, 18), true)).toBe(true);
+  });
+
+  it('hides one outside her hours here (same day)', () => {
+    expect(overlapsBookableHours(hereHours, branchHours, at(MONDAY, 12), at(MONDAY, 13), true)).toBe(false);
+    expect(overlapsBookableHours(hereHours, branchHours, at(MONDAY, 14), at(MONDAY, 15), true)).toBe(false);
+  });
+
+  it('hides one on a day she is not scheduled here', () => {
+    expect(overlapsBookableHours(hereHours, branchHours, at(TUESDAY, 16), at(TUESDAY, 17), true)).toBe(false);
+  });
+
+  it('catches a late booking running into the next day’s hours here', () => {
+    expect(overlapsBookableHours(on('mon', '00:00', '04:00'), {} as WeekScheduleInput, at(SUNDAY, 23), at(MONDAY, 1), true)).toBe(true);
+  });
+});
+
+describe('weeklyWorkingWindows — the hours a profile shows', () => {
+  const week = (days: Record<string, [string, string]>): WeekScheduleInput =>
+    Object.fromEntries(Object.entries(days).map(([d, [start, end]]) => [d, { enabled: true, start, end }])) as WeekScheduleInput;
+  const branch = week({ mon: ['10:00', '20:00'], tue: ['10:00', '20:00'], wed: ['10:00', '20:00'], sat: ['11:00', '18:00'] });
+
+  it('intersects their hours with the branch’s', () => {
+    expect(weeklyWorkingWindows(week({ mon: ['09:00', '19:00'] }), branch, true)).toEqual([
+      { day: 'mon', startMin: 600, endMin: 1140 },
+    ]);
+  });
+
+  it('keeps a multi-branch specialist’s closed days closed', () => {
+    const days = weeklyWorkingWindows(week({ mon: ['10:00', '19:00'], wed: ['10:00', '19:00'] }), branch, true).map((w) => w.day);
+    expect(days).toEqual(['mon', 'wed']);
+  });
+
+  it('shows only their own days once hours are set; a never-set schedule follows the branch', () => {
+    expect(weeklyWorkingWindows(week({ mon: ['10:00', '19:00'] }), branch, false).map((w) => w.day)).toEqual(['mon']);
+    expect(weeklyWorkingWindows({} as WeekScheduleInput, branch, false).map((w) => w.day)).toEqual([
+      'mon',
+      'tue',
+      'wed',
+      'sat',
+    ]);
+  });
+
+  it('keeps an overnight shift whole', () => {
+    expect(weeklyWorkingWindows(week({ fri: ['16:00', '02:30'] }), week({ fri: ['11:00', '02:30'] }), true)).toEqual([
+      { day: 'fri', startMin: 960, endMin: 1590 },
+    ]);
+  });
+
+  it('drops a day where the two never overlap', () => {
+    expect(weeklyWorkingWindows(week({ sat: ['08:00', '10:00'] }), branch, true)).toEqual([]);
+  });
+
+  it('matches slot generation the morning after an overnight shift', () => {
+    // A barber's day off after a late Saturday: the shop opens Sunday 12–20, but
+    // Saturday's shift reaching into Sunday keeps the fallback from applying —
+    // so Sunday is not a working day, exactly as the slots say.
+    const barber = week({ sat: ['16:00', '02:30'] });
+    const shop = week({ sat: ['11:00', '02:30'], sun: ['12:00', '20:00'] });
+    expect(weeklyWorkingWindows(barber, shop, false)).toEqual([{ day: 'sat', startMin: 960, endMin: 1590 }]);
+    expect(
+      computeSlots({ day: new Date(2026, 7, 30), durationMin: 30, stepMin: 60, specialistSchedule: barber, locationHours: shop }),
+    ).toEqual(['00:00', '01:00', '02:00']);
   });
 });

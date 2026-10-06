@@ -73,8 +73,11 @@ const USAGE_RESOLVERS: Record<string, (c: PartnerCounts) => ProductUsageStat[]> 
  * so the console groups them correctly; when they eventually move into
  * `PartnerProduct.settings`, only this file and the writer change.
  */
-const SETTING_RESOLVERS: Record<string, (p: PartnerSettingSource) => ProductSetting[]> = {
-  bookings: (p) => [
+const SETTING_RESOLVERS: Record<
+  string,
+  (p: PartnerSettingSource, grant: Record<string, unknown>) => ProductSetting[]
+> = {
+  bookings: (p, grant) => [
     {
       key: 'bookingsEnabled',
       label: 'Online booking',
@@ -87,7 +90,24 @@ const SETTING_RESOLVERS: Record<string, (p: PartnerSettingSource) => ProductSett
       description: 'On, public bookings are confirmed immediately instead of landing as pending for staff to accept.',
       value: p.autoConfirmBookings,
     },
+    {
+      key: 'branchPricing',
+      label: 'Branch & specialist pricing',
+      description:
+        'On, the backoffice lets one specialist work at several branches and lets the salon set a different price or duration per branch and per specialist. Off hides those screens; prices already set keep applying.',
+      value: grant.branchPricing === true,
+    },
   ],
+};
+
+/**
+ * Settings stored in the grant's own `PartnerProduct.settings` JSON — where new
+ * product settings belong, so they add no columns to `partners`. Like
+ * SETTING_COLUMNS this is an allowlist: the generic endpoint can write exactly
+ * these keys and nothing else.
+ */
+export const GRANT_SETTINGS: Record<string, readonly string[]> = {
+  bookings: ['branchPricing'],
 };
 
 /**
@@ -106,8 +126,16 @@ export function usageFor(productKey: string, counts: PartnerCounts): ProductUsag
   return USAGE_RESOLVERS[productKey]?.(counts) ?? [];
 }
 
-export function settingsFor(productKey: string, partner: PartnerSettingSource): ProductSetting[] {
-  return SETTING_RESOLVERS[productKey]?.(partner) ?? [];
+export function settingsFor(
+  productKey: string,
+  partner: PartnerSettingSource,
+  grantSettings?: unknown,
+): ProductSetting[] {
+  const grant =
+    grantSettings && typeof grantSettings === 'object' && !Array.isArray(grantSettings)
+      ? (grantSettings as Record<string, unknown>)
+      : {};
+  return SETTING_RESOLVERS[productKey]?.(partner, grant) ?? [];
 }
 
 /** A product as the console sees it: catalog + grant + usage + configuration. */

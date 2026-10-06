@@ -109,7 +109,7 @@ export class PlatformPartnersController {
     return this.partners.bookings(id, q.page, q.pageSize);
   }
 
-  @Patch(':id/kind')  @Patch(':id/kind')
+  @Patch(':id/kind')
   @ApiOperation({ summary: 'Switch partner between salon and single (solo) mode' })
   setKind(@Param('id') id: string, @Body() dto: SetPartnerKindDto) {
     return this.partners.setKind(id, dto.kind);

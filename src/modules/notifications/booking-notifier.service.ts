@@ -23,6 +23,8 @@ interface NotifiableBooking {
   startAt: Date | string;
   service?: { name: string } | null;
   specialist?: { name: string } | null;
+  /** The branch; named in messages when the partner has more than one. */
+  location?: { name: string; address?: string | null } | null;
   /** UI language the booking was made in ('en'|'hy'|'ru'), for localized push. */
   locale?: string | null;
 }
@@ -50,31 +52,34 @@ const PUSH_COPY: Record<Lang, Partial<Record<BookingEvent, { title: string; body
 };
 
 /** Customer-facing message per event (the salon name is prepended). Events the
- *  customer shouldn't be bothered with (e.g. internal "no-show") are omitted. */
-const CUSTOMER_MESSAGES: Partial<Record<BookingEvent, (when: string, svc: string, sp: string) => string>> = {
-  created: (when, svc, sp) =>
+ *  customer shouldn't be bothered with (e.g. internal "no-show") are omitted.
+ *  `place` is a ready "📍 branch" line, or '' for a single-branch salon. */
+const CUSTOMER_MESSAGES: Partial<
+  Record<BookingEvent, (when: string, svc: string, sp: string, place: string) => string>
+> = {
+  created: (when, svc, sp, place) =>
     `📋 <b>Booking received!</b>\n\n` +
     `We've got your request — give us a moment to confirm it. ✨\n\n` +
     `💇 <b>${svc}</b>${sp}\n` +
-    `🗓 ${when}\n\n` +
+    `🗓 ${when}\n${place}\n` +
     `<i>We'll ping you the second it's confirmed.</i>`,
-  confirmed: (when, svc, sp) =>
+  confirmed: (when, svc, sp, place) =>
     `✅ <b>You're all set!</b>\n\n` +
     `Your appointment is confirmed. We can't wait to see you! 💆\n\n` +
     `💇 <b>${svc}</b>${sp}\n` +
-    `🗓 ${when}\n\n` +
+    `🗓 ${when}\n${place}\n` +
     `<i>See you soon — and feel free to arrive a few minutes early. 🌿</i>`,
-  rescheduled: (when, svc, sp) =>
+  rescheduled: (when, svc, sp, place) =>
     `🔁 <b>Your appointment was moved</b>\n\n` +
     `No worries — here's your new time:\n\n` +
     `💇 <b>${svc}</b>${sp}\n` +
-    `🗓 <b>${when}</b>\n\n` +
+    `🗓 <b>${when}</b>\n${place}\n` +
     `<i>See you then! 💛</i>`,
-  cancelled: (when, svc) =>
+  cancelled: (when, svc, _sp, place) =>
     `❌ <b>Booking cancelled</b>\n\n` +
     `Your appointment below has been cancelled:\n\n` +
     `💇 ${svc}\n` +
-    `🗓 ${when}\n\n` +
+    `🗓 ${when}\n${place}\n` +
     `<i>We'd love to see you another time — book again whenever you're ready. 🌸</i>`,
 };
 
@@ -148,12 +153,22 @@ export class BookingNotifier {
     // Resolve the salon name (and locale fallback) without burdening callers.
     const booking = await this.prisma.booking.findUnique({
       where: { id: b.id },
-      select: { locale: true, partner: { select: { name: true } } },
+      select: {
+        locale: true,
+        location: { select: { name: true } },
+        partner: { select: { name: true, _count: { select: { locations: { where: { deletedAt: null } } } } } },
+      },
     });
     const realLang: Lang =
       booking?.locale === 'hy' || booking?.locale === 'ru' ? booking.locale : lang;
     const c = PUSH_COPY[realLang][event] ?? copy;
-    const salon = booking?.partner?.name ?? 'the salon';
+    // With several branches, say which one ("Beauty Club · Kentron").
+    const branch = (booking?.partner?._count.locations ?? 0) > 1 ? booking?.location?.name : undefined;
+    const salon = booking?.partner?.name
+      ? branch
+        ? `${booking.partner.name} · ${branch}`
+        : booking.partner.name
+      : 'the salon';
     const when = formatWhen(b.startAt);
 
     await this.push.notifyBooking(b.id, {
@@ -171,14 +186,23 @@ export class BookingNotifier {
 
     const client = await this.prisma.client.findUnique({
       where: { id: b.clientId },
-      select: { telegramChatId: true, partner: { select: { name: true } } },
+      select: {
+        telegramChatId: true,
+        partner: { select: { name: true, _count: { select: { locations: { where: { deletedAt: null } } } } } },
+      },
     });
     if (!client?.telegramChatId) return; // not connected — nothing to do
 
     const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
     const sp = b.specialist?.name ? ` with ${escapeHtml(b.specialist.name)}` : '';
-    const body = template(when, escapeHtml(svc), sp);
+    // A salon with several branches: tell the client which one to go to.
+    const multiBranch = (client.partner?._count.locations ?? 0) > 1;
+    const place =
+      multiBranch && b.location?.name
+        ? `📍 ${escapeHtml(b.location.name)}${b.location.address ? ` · ${escapeHtml(b.location.address)}` : ''}\n`
+        : '';
+    const body = template(when, escapeHtml(svc), sp, place);
     // Salon name as a subtle header above the message body.
     const salon = client.partner?.name
       ? `🏛 <b>${escapeHtml(client.partner.name)}</b>\n\n`
@@ -269,8 +293,11 @@ export class BookingNotifier {
     const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
     const withSp = b.specialist?.name ? ` with ${b.specialist.name}` : '';
+    // Admins of a multi-branch salon see every branch's bookings: name it.
+    const branches = await this.prisma.location.count({ where: { partnerId: b.partnerId, deletedAt: null } });
+    const branch = branches > 1 && b.location?.name ? b.location.name : null;
     const title = EVENT_TITLES[event];
-    const body = `${b.clientName} · ${svc}${withSp} · ${when}`;
+    const body = `${b.clientName} · ${svc}${withSp}${branch ? ` · ${branch}` : ''} · ${when}`;
     const userIds = recipients.map((r) => r.id);
 
     // 1) Persist one notification per recipient (source of truth for the bell).
@@ -279,6 +306,7 @@ export class BookingNotifier {
       clientName: b.clientName,
       service: svc,
       specialist: b.specialist?.name ?? null,
+      ...(branch ? { location: branch } : {}),
       startAt: new Date(b.startAt).toISOString(),
     };
     await this.prisma.notification.createMany({

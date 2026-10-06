@@ -98,11 +98,17 @@ export class LocationsService {
     return this.prisma.location.update({ where: { id }, data });
   }
 
-  /** Soft-delete. Blocks if specialists are still assigned to the branch. */
+  /**
+   * Soft-delete. Blocks while any specialist still works at the branch — as
+   * their home branch or as one of several.
+   */
   async remove(partnerId: string, id: string) {
     await this.get(partnerId, id);
     const activeSpecialists = await this.prisma.specialist.count({
-      where: { locationId: id, deletedAt: null },
+      where: {
+        deletedAt: null,
+        OR: [{ locationId: id }, { locations: { some: { locationId: id } } }],
+      },
     });
     if (activeSpecialists > 0) {
       throw AppException.conflict(

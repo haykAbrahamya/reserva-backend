@@ -38,6 +38,15 @@ export class PublicController {
     return this.publicBooking.slots(slug, q);
   }
 
+  @Get('slot-options')
+  @ApiOperation({
+    summary:
+      'Start times for "any available specialist", each with the specialist who would be booked and their price',
+  })
+  slotOptions(@Param('slug') slug: string, @Query() q: SlotsQueryDto) {
+    return this.publicBooking.slotOptions(slug, q);
+  }
+
   @Get('availability-summary')
   @ApiOperation({ summary: 'Per-day availability density for the booking day-strip' })
   availabilitySummary(@Param('slug') slug: string, @Query() q: AvailabilitySummaryQueryDto) {

@@ -57,6 +57,27 @@ export const bookingSlotsQuerySchema = z.object({
 });
 export class BookingSlotsQueryDto extends createZodDto(bookingSlotsQuerySchema) {}
 
+/** Live price for the staff booking dialog: one service at one branch (± specialist). */
+export const bookingQuoteQuerySchema = z.object({
+  serviceId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  specialistId: z.string().uuid().optional(),
+});
+export class BookingQuoteQueryDto extends createZodDto(bookingQuoteQuerySchema) {}
+
+/**
+ * Window for "busy at another branch" blocks in the calendar. `locationId` picks
+ * the branch for admins; a manager always gets their own branch.
+ */
+export const busyElsewhereQuerySchema = z
+  .object({
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+    locationId: z.string().uuid().optional(),
+  })
+  .refine((q) => q.from <= q.to, { message: '`from` must be on or before `to`', path: ['from'] });
+export class BusyElsewhereQueryDto extends createZodDto(busyElsewhereQuerySchema) {}
+
 export const createBookingSchema = z.object({
   locationId: z.string().uuid(),
   /** Null/omitted for facility/entry services (spa) that aren't tied to a person. */

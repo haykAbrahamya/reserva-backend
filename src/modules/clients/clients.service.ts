@@ -130,15 +130,28 @@ export class ClientsService {
       },
     });
 
-    const completed = bookings.filter((b) => b.status === 'completed');
+    // Totals cover the client's WHOLE history, not just the 50 rows listed —
+    // the same definition the client list uses, so the two always agree.
     // Effective charge: the captured final price (range services) or the booked price.
-    const totalSpend = completed.reduce((sum, b) => sum + (b.finalPrice ?? b.priceAtBooking), 0);
+    const [visits, completed, finalSum, bookedSum] = await Promise.all([
+      this.prisma.booking.count({ where: { clientId: id, partnerId } }),
+      this.prisma.booking.count({ where: { clientId: id, partnerId, status: 'completed' } }),
+      this.prisma.booking.aggregate({
+        where: { clientId: id, partnerId, status: 'completed', finalPrice: { not: null } },
+        _sum: { finalPrice: true },
+      }),
+      this.prisma.booking.aggregate({
+        where: { clientId: id, partnerId, status: 'completed', finalPrice: null },
+        _sum: { priceAtBooking: true },
+      }),
+    ]);
+    const totalSpend = (finalSum._sum.finalPrice ?? 0) + (bookedSum._sum.priceAtBooking ?? 0);
 
     return {
       ...client,
       stats: {
-        visits: bookings.length,
-        completed: completed.length,
+        visits,
+        completed,
         totalSpend,
         lastVisit: bookings[0]?.startAt ?? null,
       },

@@ -19,9 +19,13 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed:professionals": "ts-node -P tsconfig.seed.json prisma/seed-professionals.ts",
-    "seed:professionals:clean": "ts-node -P tsconfig.seed.json prisma/seed-professionals.ts --clean"
+    "seed:professionals:clean": "ts-node -P tsconfig.seed.json prisma/seed-professionals.ts --clean",
+    "db:seed": "pnpm run seed:professionals && ts-node -P tsconfig.seed.json prisma/seed.ts",
+    "db:seed:clean": "ts-node -P tsconfig.seed.json prisma/seed.ts --clean && pnpm run seed:professionals:clean"
   },
-  "prisma": {},
+  "prisma": {
+    "seed": "pnpm run db:seed"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@prisma/client",

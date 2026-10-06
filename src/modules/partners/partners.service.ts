@@ -7,6 +7,8 @@ import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
 import { cleanLocalizedInput } from '@/common/schemas/localized';
+import { WEEKDAYS, type WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
+import { MINUTES_PER_DAY, minutesToTime, weeklyWorkingWindows } from '@/common/utils/availability';
 import { SpecialistReviewsService } from '@/modules/specialist-reviews/specialist-reviews.service';
 import type { CreatePartnerDto, UpdatePartnerDto } from './dto/partner.dto';
 import { ProductsService } from '@/modules/products/products.service';
@@ -77,7 +79,12 @@ export class PartnersService {
         services: { where: { deletedAt: null, active: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
         specialists: {
           where: { deletedAt: null, active: true },
-          include: { services: { select: { serviceId: true } } },
+          include: {
+            services: { select: { serviceId: true } },
+            // Every branch they work at (home included) → `locationIds`, and
+            // their hours at each → `week`.
+            locations: { select: { locationId: true, schedule: true }, orderBy: { createdAt: 'asc' } },
+          },
           orderBy: { name: 'asc' },
         },
         // Public courses: published (active) courses, newest first, each with its
@@ -101,8 +108,71 @@ export class PartnersService {
     if (!partner) throw AppException.notFound('Salon not found');
     // Enrich each specialist with its computed rating (avg + count) so every
     // place that shows a specialist in the client app can show real stars.
-    const aggregates = await this.reviews.aggregatesFor(partner.specialists.map((s) => s.id));
-    return serializePartner({ ...partner, services: redactHiddenPrices(partner.services) }, aggregates);
+    const [aggregates, branchRows, ownRows] = await Promise.all([
+      this.reviews.aggregatesFor(partner.specialists.map((s) => s.id)),
+      // Branch & specialist price overrides — sparse, so usually empty. The page
+      // resolves them with the same rule as the server (@reserva/shared).
+      this.prisma.locationService.findMany({ where: { partnerId: partner.id } }),
+      this.prisma.specialistPrice.findMany({ where: { partnerId: partner.id } }),
+    ]);
+
+    const liveBranches = new Set(partner.locations.map((l) => l.id));
+    const hidden = new Set(partner.services.filter((s) => s.hidePrice).map((s) => s.id));
+    const liveSpecialists = new Set(partner.specialists.map((s) => s.id));
+
+    const services = redactHiddenPrices(partner.services).map(({ repeatEveryDays: _internal, ...svc }) => ({
+      ...svc,
+      // Only branches that override something for this service (no row = the
+      // service's own price/duration, offered).
+      branchSettings: branchRows
+        .filter((r) => r.serviceId === svc.id && liveBranches.has(r.locationId))
+        .map((r) => ({
+          locationId: r.locationId,
+          offered: r.offered,
+          ...redactOverridePrice(r, hidden.has(svc.id)),
+          duration: r.duration,
+          capacity: r.capacity,
+        })),
+    }));
+
+    // Specialists' own prices, for services and branches the page can show.
+    const liveServices = new Set(services.map((s) => s.id));
+    const specialistPrices = ownRows
+      .filter(
+        (r) => liveServices.has(r.serviceId) && liveBranches.has(r.locationId) && liveSpecialists.has(r.specialistId),
+      )
+      .map((r) => ({
+        specialistId: r.specialistId,
+        locationId: r.locationId,
+        serviceId: r.serviceId,
+        ...redactOverridePrice(r, hidden.has(r.serviceId)),
+        duration: r.duration,
+      }));
+
+    // When and where each specialist works — what bookings use (their hours at
+    // a branch ∩ the branch's), so the profile and the booking flow agree.
+    const hoursAt = new Map(partner.locations.map((l) => [l.id, l.hours as WeekScheduleInput | null]));
+    const specialists = partner.specialists.map((sp) => {
+      const strict = sp.locations.length > 1;
+      const week = sp.locations
+        .filter((l) => liveBranches.has(l.locationId))
+        .flatMap((l) =>
+          weeklyWorkingWindows(l.schedule as WeekScheduleInput | null, hoursAt.get(l.locationId), strict).map((w) => ({
+            day: w.day,
+            locationId: l.locationId,
+            start: minutesToTime(w.startMin),
+            // Same convention as a schedule: an end before the start closes after midnight.
+            end: minutesToTime(w.endMin % MINUTES_PER_DAY),
+          })),
+        )
+        .sort((a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day) || a.start.localeCompare(b.start));
+      return { ...sp, week };
+    });
+
+    return {
+      ...serializePartner({ ...partner, services, specialists }, aggregates),
+      specialistPrices,
+    };
   }
 
   /**
@@ -287,7 +357,26 @@ function redactHiddenPrices<T extends PricedService>(services: T[] | undefined):
   );
 }
 
-type SpecialistWithServices = { id?: string; services?: { serviceId: string }[] } & Record<string, unknown>;
+/**
+ * The same redaction for a branch or specialist price override: a service whose
+ * price is hidden hides EVERY level of it, or a branch price would quietly
+ * reveal what the service row withholds.
+ */
+function redactOverridePrice(
+  r: { priceType: string | null; price: number | null; priceMax: number | null },
+  hidden: boolean,
+) {
+  return hidden
+    ? { priceType: r.priceType, price: null, priceMax: null }
+    : { priceType: r.priceType, price: r.price, priceMax: r.priceMax };
+}
+
+type SpecialistWithServices = {
+  id?: string;
+  locationId?: string;
+  services?: { serviceId: string }[];
+  locations?: { locationId: string }[];
+} & Record<string, unknown>;
 
 /** Flatten specialist service-links into serviceIds[] for the API shape, and
  *  attach the computed rating (avg + count) when an aggregates map is given. */
@@ -324,11 +413,18 @@ function serializePartner<T extends Record<string, unknown>>(
       ? { ...presentation, rating: partnerRating, reviews: totalReviews }
       : presentation,
     specialists: specialists.map((sp) => {
-      const { services, ...rest } = sp;
+      // `phone` is staff contact data, not something the public page shows.
+      const { services, locations, phone: _private, ...rest } = sp;
       const agg = sp.id ? aggregates?.get(sp.id) : undefined;
+      // Every branch they work at, home branch first. `locationId` (home) stays
+      // for pages built before specialists could work at several branches.
+      const linked = (locations ?? []).map((l) => l.locationId);
+      const home = sp.locationId;
+      const locationIds = home ? [home, ...linked.filter((id) => id !== home)] : linked;
       return {
         ...rest,
         serviceIds: (services ?? []).map((s) => s.serviceId),
+        locationIds,
         rating: agg?.rating ?? 0,
         reviewCount: agg?.reviewCount ?? 0,
       };

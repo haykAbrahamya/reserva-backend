@@ -10,6 +10,7 @@ import {
   usageFor,
   settingsFor,
   SETTING_COLUMNS,
+  GRANT_SETTINGS,
   type PartnerCounts,
   type PartnerSettingSource,
   type PartnerProductPanel,
@@ -161,7 +162,7 @@ export class PlatformPartnersService {
         enabledAt: grant?.enabledAt ?? null,
         selfServe: product.selfServe,
         usage: usageFor(product.key, counts),
-        settings: settingsFor(product.key, settingSource),
+        settings: settingsFor(product.key, settingSource, grant?.settings),
       };
     });
   }
@@ -189,14 +190,38 @@ export class PlatformPartnersService {
   async setProductSetting(id: string, productKey: string, setting: string, value: boolean) {
     await this.assertExists(id);
     const column = SETTING_COLUMNS[productKey]?.[setting];
-    if (!column) {
-      throw AppException.badRequest(
-        ErrorCode.VALIDATION_FAILED,
-        `'${setting}' is not a configurable setting of '${productKey}'`,
-      );
+    if (column) {
+      await this.prisma.partner.update({ where: { id }, data: { [column]: value } });
+      return this.get(id);
     }
-    await this.prisma.partner.update({ where: { id }, data: { [column]: value } });
-    return this.get(id);
+
+    // Newer settings live in the grant's own JSON (see GRANT_SETTINGS).
+    if (GRANT_SETTINGS[productKey]?.includes(setting)) {
+      const grant = await this.prisma.partnerProduct.findUnique({
+        where: { partnerId_productKey: { partnerId: id, productKey } },
+        select: { id: true, settings: true },
+      });
+      if (!grant) {
+        throw AppException.badRequest(
+          ErrorCode.PRODUCT_NOT_ENABLED,
+          `Enable '${productKey}' for this partner before changing its settings`,
+        );
+      }
+      const current =
+        grant.settings && typeof grant.settings === 'object' && !Array.isArray(grant.settings)
+          ? (grant.settings as Prisma.JsonObject)
+          : {};
+      await this.prisma.partnerProduct.update({
+        where: { id: grant.id },
+        data: { settings: { ...current, [setting]: value } },
+      });
+      return this.get(id);
+    }
+
+    throw AppException.badRequest(
+      ErrorCode.VALIDATION_FAILED,
+      `'${setting}' is not a configurable setting of '${productKey}'`,
+    );
   }
 
   /**
@@ -493,27 +518,36 @@ export class PlatformPartnersService {
       await tx.booking.deleteMany({ where: { partnerId: id } });
 
       // 2. Specialist sub-tables, then specialists (location is Restrict).
+      //    Price overrides and branch links first: links Restrict-reference
+      //    locations, and personal prices hang off the links.
+      await tx.specialistPrice.deleteMany({ where: { partnerId: id } });
+      await tx.locationService.deleteMany({ where: { partnerId: id } });
+      await tx.specialistLocation.deleteMany({ where: { partnerId: id } });
       await tx.specialistReview.deleteMany({ where: { partnerId: id } });
       await tx.specialistTimeOff.deleteMany({ where: { partnerId: id } });
       await tx.specialistService.deleteMany({ where: { specialist: { partnerId: id } } });
       await tx.specialist.deleteMany({ where: { partnerId: id } });
 
-      // 3. Catalog + people.
+      // 3. Vacancies Restrict-reference their branch, so they go before the
+      //    locations (their applications cascade with them).
+      await tx.vacancy.deleteMany({ where: { partnerId: id } });
+
+      // 4. Catalog + people.
       await tx.service.deleteMany({ where: { partnerId: id } });
       await tx.location.deleteMany({ where: { partnerId: id } });
       await tx.client.deleteMany({ where: { partnerId: id } });
 
-      // 4. In-app notifications (no partner cascade) + users (cascade their own
+      // 5. In-app notifications (no partner cascade) + users (cascade their own
       //    notifications/push subs/refresh tokens).
       await tx.notification.deleteMany({ where: { partnerId: id } });
       await tx.user.deleteMany({ where: { partnerId: id } });
 
-      // 5. Presentation, then the partner row itself.
+      // 6. Presentation, then the partner row itself.
       await tx.partnerPresentation.deleteMany({ where: { partnerId: id } });
       await tx.partner.delete({ where: { id } });
     });
 
-    // 6. Best-effort: remove the partner's uploaded images directory from disk.
+    // 7. Best-effort: remove the partner's uploaded images directory from disk.
     try {
       const uploadsDir = resolve(this.config.get<string>('UPLOADS_DIR') ?? './uploads');
       await rm(join(uploadsDir, id), { recursive: true, force: true });

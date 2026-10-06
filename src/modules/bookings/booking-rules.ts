@@ -12,6 +12,7 @@ const ACTIVE_STATUSES = ['pending', 'confirmed', 'completed'] as const;
 export interface BookingValidationContext {
   specialist: {
     id: string;
+    /** The specialist's weekly hours AT THE BOOKING'S BRANCH (their link row). */
     schedule: Prisma.JsonValue;
     services: { serviceId: string }[];
   };
@@ -19,6 +20,12 @@ export interface BookingValidationContext {
   serviceId: string;
   startAt: Date;
   endAt: Date;
+  /**
+   * The specialist works at several branches: a day their hours at THIS branch
+   * leave closed is closed (they are at another branch), instead of falling
+   * back to the branch's own hours as a single-branch schedule does.
+   */
+  strictSchedule?: boolean;
 }
 
 export interface BookingRuleOptions {
@@ -75,7 +82,7 @@ export function assertBookingAllowed(
   const startMin = ctx.startAt.getHours() * 60 + ctx.startAt.getMinutes();
   const endMin = startMin + (ctx.endAt.getTime() - ctx.startAt.getTime()) / 60000;
 
-  if (!isWithinWorkingHours(sched, hours, ctx.startAt, startMin, endMin)) {
+  if (!isWithinWorkingHours(sched, hours, ctx.startAt, startMin, endMin, ctx.strictSchedule)) {
     throw AppException.badRequest(
       ErrorCode.OUTSIDE_WORKING_HOURS,
       'The selected time is outside working hours',
