@@ -21,7 +21,8 @@
     "seed:professionals": "ts-node -P tsconfig.seed.json prisma/seed-professionals.ts",
     "seed:professionals:clean": "ts-node -P tsconfig.seed.json prisma/seed-professionals.ts --clean",
     "db:seed": "pnpm run seed:professionals && ts-node -P tsconfig.seed.json prisma/seed.ts",
-    "db:seed:clean": "ts-node -P tsconfig.seed.json prisma/seed.ts --clean && pnpm run seed:professionals:clean"
+    "db:seed:clean": "ts-node -P tsconfig.seed.json prisma/seed.ts --clean && pnpm run seed:professionals:clean",
+    "db:seed:analytics": "ts-node -P tsconfig.seed.json prisma/seed-analytics.ts"
   },
   "prisma": {
     "seed": "pnpm run db:seed"

@@ -18,14 +18,18 @@
  *     bell notifications, support threads
  *   · platform staff, pending signups, demo requests and visitor analytics for
  *     the internal console
+ *   · ~45 days of site analytics (sessions + events) behind the console's
+ *     Analytics section, consistent with the bookings above — see
+ *     prisma/demo/analytics.ts; `pnpm db:seed:analytics` refreshes just that
  *
  * Every demo login uses the password in DEMO_PASSWORD; the full list is printed
  * at the end of a run.
  *
  * SAFETY. Re-running rebuilds ONLY what this script owns: partners carrying a
- * demo slug or demo staff email, its pending signups, demo requests, and visits
- * from RFC 5737 documentation IPs. Against a database that is not on localhost
- * it refuses to run without --yes.
+ * demo slug or demo staff email, its pending signups, demo requests, visits
+ * from RFC 5737 documentation IPs, and site-analytics rows whose ids start with
+ * `demo-`. Against a database that is not on localhost it refuses to run
+ * without --yes.
  */
 // Pin the clock BEFORE any Date is built — the same rule as src/main.ts, so
 // "11:00" in the fixtures is 11:00 in the salon's own time zone.
@@ -39,6 +43,7 @@ import type { BookingSource, BookingStatus, NotificationType, VacancyApplication
 
 import { PasswordService } from '../src/auth/password.service';
 import { newId } from '../src/common/ids';
+import { DEMO_ANALYTICS_DAYS, cleanDemoAnalytics, seedDemoAnalytics } from './demo/analytics';
 import { avatarSvg, coverSvg, interiorSvg, logoSvg, removeUploads, storeSvg, workSvg } from './demo/images';
 import {
   PARTNERS,
@@ -193,6 +198,8 @@ async function clean(): Promise<number> {
   await prisma.pendingRegistration.deleteMany({ where: { adminEmail: { in: PENDING_SIGNUPS.map((p) => p.adminEmail) } } });
   await prisma.demoRequest.deleteMany({ where: { name: { in: DEMO_REQUESTS.map((d) => d.name) } } });
   await prisma.visitorEvent.deleteMany({ where: { OR: VISIT_IP_PREFIXES.map((p) => ({ ip: { startsWith: p } })) } });
+  // By id prefix: deleting the partners above would only null their partnerId.
+  await cleanDemoAnalytics(prisma);
   if (CLEAN_ONLY) {
     await prisma.platformUser.deleteMany({ where: { email: { in: PLATFORM_STAFF.map((s) => s.email) } } });
   }
@@ -1361,7 +1368,7 @@ async function main() {
   const roleNames = await preflight();
   const removed = await clean();
   if (CLEAN_ONLY) {
-    console.log(`removed ${removed} demo partner(s), their uploads, pending signups, demo requests and visits`);
+    console.log(`removed ${removed} demo partner(s), their uploads, pending signups, demo requests, visits and site analytics`);
     return;
   }
 
@@ -1396,6 +1403,11 @@ async function main() {
   await seedPendingSignups(hash);
   const visits = await seedVisits();
   console.log(`✓ platform: ${PLATFORM_STAFF.length} staff · ${DEMO_REQUESTS.length} demo requests · ${PENDING_SIGNUPS.length} pending signups · ${visits} visits`);
+  // Last: it reads the partners, bookings and pending signups made above.
+  const analytics = await seedDemoAnalytics(prisma);
+  console.log(
+    `✓ site analytics: ${DEMO_ANALYTICS_DAYS} days · ${analytics.sessions} sessions · ${analytics.visitors} visitors · ${analytics.events} events`,
+  );
   if (!pros.length) {
     console.log('\n! No demo professionals found — run `pnpm seed:professionals` to link applicants to accounts.');
   }

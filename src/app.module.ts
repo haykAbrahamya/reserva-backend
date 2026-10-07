@@ -35,6 +35,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { SignupModule } from './modules/signup/signup.module';
 import { DemoRequestsModule } from './modules/demo-requests/demo-requests.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { SiteAnalyticsModule } from './modules/site-analytics/site-analytics.module';
 import { PlatformModule } from './platform/platform.module';
 import { ProfessionalsModule } from './professionals/professionals.module';
 import { SupportModule } from './modules/support/support.module';
@@ -88,6 +89,7 @@ import { HealthController } from './health.controller';
     SignupModule,
     DemoRequestsModule,
     AnalyticsModule,
+    SiteAnalyticsModule,
     PlatformModule,
     ProfessionalsModule,
     SupportModule,

@@ -78,6 +78,21 @@ const envSchema = z.object({
    */
   UPLOADS_PUBLIC_URL: z.string().default(''),
 
+  /**
+   * Key for the public site's analytics beacon (POST /public/pulse): base64url,
+   * 32 bytes. Optional — empty uses the built-in default K1, which the client
+   * bundles too. Overriding it means setting the client's VITE_SITE_PULSE_KEY
+   * to the same value in the same release. Not a secret: it ships in public JS.
+   */
+  SITE_PULSE_KEY: z
+    .string()
+    .trim()
+    .default('')
+    .refine(
+      (v) => v === '' || /^[A-Za-z0-9_-]{43}$/.test(v),
+      'must be a base64url-encoded 32-byte key',
+    ),
+
   /** Sentry error monitoring. Empty DSN → Sentry self-disables (dev/local). */
   SENTRY_DSN: z.string().default(''),
   SENTRY_ENV: z.string().default('production'),

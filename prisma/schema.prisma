@@ -209,6 +209,8 @@ model Partner {
   supportThread     SupportThread?
   vacancies         Vacancy[]
   products          PartnerProduct[]
+  /// Public-site analytics events that happened on this partner's page.
+  siteEvents        SiteEvent[]
 
   @@index([active])
   // Marketplace listing query: active, listed salons.
@@ -1657,6 +1659,74 @@ model VisitorEvent {
   @@index([createdAt])
   @@index([partnerSlug, createdAt])
   @@map("visitor_events")
+}
+
+// ── Site analytics (public site → internal console "Analytics") ──
+// Written by POST /public/pulse: encrypted event batches from the public site
+// (marketplace, sign-up, partner pages). Supersedes `visitor_events`, which
+// stays for old cached clients. Privacy by construction: no raw IP and no raw
+// User-Agent are stored — device/browser/os and country/city are derived on
+// the server and the inputs dropped — and events carry ids, never form values.
+
+/// One visit to the public site: activity from one browser with no 30-minute
+/// gap. Created by the first batch that names it. No raw IP / User-Agent.
+model SiteSession {
+  id           String      @id // client session uuid
+  visitorId    String
+  startedAt    DateTime    @default(now())
+  lastSeenAt   DateTime    @default(now())
+  landingPath  String?
+  landingHost  String?
+  referrer     String?
+  referrerHost String?
+  /// direct | reserva | instagram | facebook | google | search | tiktok | telegram | whatsapp | campaign | other
+  channel      String      @default("direct")
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  utmContent   String?
+  utmTerm      String?
+  deviceType   String?
+  browser      String?
+  os           String?
+  country      String?
+  city         String?
+  language     String?
+  screenW      Int?
+  screenH      Int?
+  isBot        Boolean     @default(false)
+  isInternal   Boolean     @default(false)
+  events       SiteEvent[]
+
+  @@index([startedAt])
+  @@index([visitorId])
+  @@map("site_sessions")
+}
+
+/// One thing a visitor did (page_view, book_click, booking_step, …). `props`
+/// holds the event's catalogued, validated props only — unknown keys are
+/// stripped at ingestion.
+model SiteEvent {
+  id        String      @id // client event uuid (dedupe)
+  sessionId String
+  session   SiteSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  visitorId String
+  name      String
+  partnerId String?
+  partner   Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  path      String?
+  host      String?
+  props     Json        @default("{}")
+  /// The client's clock (ordering only); null when missing or implausible.
+  clientAt  DateTime?
+  /// Server receive time — what every report buckets by.
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([name, createdAt])
+  @@index([partnerId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("site_events")
 }
 
 // ── Support chat (partner ⇄ platform) ─────────────────────────

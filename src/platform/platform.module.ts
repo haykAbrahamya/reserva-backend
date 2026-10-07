@@ -7,16 +7,20 @@ import { PlatformStaffController } from './staff/platform-staff.controller';
 import { PlatformStaffService } from './staff/platform-staff.service';
 import { PlatformStatsController } from './stats/platform-stats.controller';
 import { PlatformStatsService } from './stats/platform-stats.service';
+import { PlatformBookingsController } from './bookings/platform-bookings.controller';
+import { PlatformBookingsService } from './bookings/platform-bookings.service';
 import { PlatformDemoRequestsController } from './demo-requests/platform-demo-requests.controller';
 import { DemoRequestsModule } from '@/modules/demo-requests/demo-requests.module';
 import { PlatformPendingRegistrationsController } from './pending-registrations/platform-pending-registrations.controller';
 import { PlatformPendingRegistrationsService } from './pending-registrations/platform-pending-registrations.service';
 import { PlatformAnalyticsController } from './analytics/platform-analytics.controller';
+import { PlatformSiteAnalyticsController } from './analytics/platform-site-analytics.controller';
 import { PlatformSpecialtiesController } from './specialties/platform-specialties.controller';
 import { PlatformAreasController } from './areas/platform-areas.controller';
 import { PlatformAreasService } from './areas/platform-areas.service';
 import { PlatformSpecialtiesService } from './specialties/platform-specialties.service';
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
+import { SiteAnalyticsModule } from '@/modules/site-analytics/site-analytics.module';
 import { SignupModule } from '@/modules/signup/signup.module';
 import { PlatformAuthGuard } from './guards/platform-auth.guard';
 import { PlatformRolesGuard } from './guards/platform-roles.guard';
@@ -28,15 +32,17 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
  * PlatformAuthGuard, which verifies a distinct 'platform-access' token type.
  */
 @Module({
-  imports: [DemoRequestsModule, AnalyticsModule, SignupModule],
+  imports: [DemoRequestsModule, AnalyticsModule, SiteAnalyticsModule, SignupModule],
   controllers: [
     PlatformAuthController,
     PlatformPartnersController,
     PlatformStaffController,
     PlatformStatsController,
+    PlatformBookingsController,
     PlatformDemoRequestsController,
     PlatformPendingRegistrationsController,
     PlatformAnalyticsController,
+    PlatformSiteAnalyticsController,
     PlatformSpecialtiesController,
     PlatformAreasController,
   ],
@@ -45,6 +51,7 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
     PlatformPartnersService,
     PlatformStaffService,
     PlatformStatsService,
+    PlatformBookingsService,
     PlatformPendingRegistrationsService,
     PlatformSpecialtiesService,
     PlatformAreasService,

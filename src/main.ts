@@ -17,6 +17,7 @@ import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { initSentry } from './common/monitoring/sentry';
 import { buildOriginChecker } from './common/utils/cors-origin';
+import { PULSE_PATH, pulseBodyReader } from './modules/site-analytics/pulse-body';
 import type { Env } from './config/env.config';
 
 async function bootstrap() {
@@ -72,6 +73,12 @@ async function bootstrap() {
     },
     credentials: true,
   });
+
+  // The public site's analytics beacon posts a text/plain body (a CORS simple
+  // request, so sendBeacon needs no preflight). Nest parses only JSON and
+  // urlencoded bodies, so read this one route's body as text — mounted here,
+  // ahead of the parsers Nest adds at init.
+  app.use(PULSE_PATH, pulseBodyReader());
 
   // All routes under /api/v1.
   app.setGlobalPrefix('api');
