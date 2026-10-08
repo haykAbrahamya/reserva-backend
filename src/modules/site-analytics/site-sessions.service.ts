@@ -28,6 +28,7 @@ const OUTCOME: Record<SessionOutcome, Prisma.Sql> = {
   booked: Prisma.sql`bool_or(e."name" = 'booking_success')`,
   contacted: Prisma.sql`bool_or(e."name" = 'contact_click')`,
   signup: Prisma.sql`bool_or(e."name" = 'signup_success')`,
+  reviewed: Prisma.sql`bool_or(e."name" = 'review_success')`,
   bookclick: Prisma.sql`bool_or(e."name" IN ('book_click', 'booking_open'))`,
   // Landed and left: one event, and that one a page view.
   bounced: Prisma.sql`count(*) = 1 AND bool_and(e."name" = 'page_view')`,
@@ -72,6 +73,7 @@ export interface RawSession {
   booked: boolean | null;
   contacted: boolean | null;
   signedUp: boolean | null;
+  reviewed: boolean | null;
   bookClicked: boolean | null;
   journey: string[] | null;
   partners: PartnerRef[] | null;
@@ -155,6 +157,7 @@ export class SiteSessionsService {
           bool_or("name" = 'booking_success') AS "booked",
           bool_or("name" = 'contact_click') AS "contacted",
           bool_or("name" = 'signup_success') AS "signedUp",
+          bool_or("name" = 'review_success') AS "reviewed",
           bool_or("name" IN ('book_click', 'booking_open')) AS "bookClicked",
           array_agg("name" ORDER BY "seq") FILTER (WHERE "seq" <= 12) AS "journey"
         FROM ev
@@ -184,7 +187,7 @@ export class SiteSessionsService {
              s."deviceType", s."browser", s."os", s."country", s."city", s."language",
              s."landingPath", s."landingHost", s."isInternal", s."startedAt", s."lastSeenAt",
              st."firstAt", st."lastAt", st."eventCount", st."pageViews",
-             st."booked", st."contacted", st."signedUp", st."bookClicked", st."journey",
+             st."booked", st."contacted", st."signedUp", st."reviewed", st."bookClicked", st."journey",
              t."partners", v."visitorSessions"
       FROM "site_sessions" s
       LEFT JOIN stats st ON st."sessionId" = s."id"
@@ -281,6 +284,7 @@ export function toSessionRow(r: RawSession): SessionRow {
       booked: r.booked === true,
       contacted: r.contacted === true,
       signedUp: r.signedUp === true,
+      reviewed: r.reviewed === true,
       bookClicked: r.bookClicked === true,
     },
     journey: (r.journey ?? []).slice(0, 12),

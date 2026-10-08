@@ -83,9 +83,16 @@ export type AnalyticsEventsQuery = z.infer<typeof analyticsEventsQuerySchema>;
 
 /**
  * What a session achieved (contract §11). `bounced` = exactly one event, and
- * that one a page_view.
+ * that one a page_view; `reviewed` = left a review (contract §12).
  */
-export const SESSION_OUTCOMES = ['booked', 'contacted', 'signup', 'bookclick', 'bounced'] as const;
+export const SESSION_OUTCOMES = [
+  'booked',
+  'contacted',
+  'signup',
+  'reviewed',
+  'bookclick',
+  'bounced',
+] as const;
 export type SessionOutcome = (typeof SESSION_OUTCOMES)[number];
 
 /** sessions: visits, newest first, paginated; optionally one partner / source / outcome. */

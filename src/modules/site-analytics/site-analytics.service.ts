@@ -46,12 +46,14 @@ interface EventKpis {
   contactClicks: number;
   signupViews: number;
   signupStarts: number;
+  reviewForms: number;
 }
 
 interface StoredKpis {
   bookings: number;
   signups: number;
   activations: number;
+  reviews: number;
 }
 
 interface PartnerAggregate {
@@ -147,6 +149,8 @@ export class SiteAnalyticsService {
         signupStarts: kpi(now.signupStarts, before.signupStarts),
         signups: kpi(stored.signups, storedBefore.signups),
         activations: kpi(stored.activations, storedBefore.activations),
+        reviewForms: kpi(now.reviewForms, before.reviewForms),
+        reviews: kpi(stored.reviews, storedBefore.reviews),
       },
       series: eachDay(range.from, range.to).map((date) => ({
         date,
@@ -360,7 +364,8 @@ export class SiteAnalyticsService {
         (count(*) FILTER (WHERE e."name" = 'booking_open'))::int AS "bookingOpens",
         (count(*) FILTER (WHERE e."name" = 'contact_click'))::int AS "contactClicks",
         (count(*) FILTER (WHERE e."name" = 'page_view' AND e."props"->>'pt' = 'signup'))::int AS "signupViews",
-        (count(*) FILTER (WHERE e."name" = 'signup_start'))::int AS "signupStarts"
+        (count(*) FILTER (WHERE e."name" = 'signup_start'))::int AS "signupStarts",
+        (count(*) FILTER (WHERE e."name" = 'review_form_open'))::int AS "reviewForms"
       FROM "site_events" e
       JOIN "site_sessions" s ON s."id" = e."sessionId"
       WHERE ${eventsIn(w)} AND ${audience(includeInternal)}`;
@@ -377,7 +382,9 @@ export class SiteAnalyticsService {
         (SELECT count(*)::int FROM "pending_registrations" r
           WHERE r."createdAt" >= ${from} AND r."createdAt" < ${until}) AS "signups",
         (SELECT count(*)::int FROM "pending_registrations" r
-          WHERE r."consumedAt" >= ${from} AND r."consumedAt" < ${until}) AS "activations"`;
+          WHERE r."consumedAt" >= ${from} AND r."consumedAt" < ${until}) AS "activations",
+        (SELECT count(*)::int FROM "specialist_reviews" v
+          WHERE v."createdAt" >= ${from} AND v."createdAt" < ${until}) AS "reviews"`;
     return row;
   }
 

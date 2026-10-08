@@ -49,6 +49,10 @@ const EXAMPLES: Record<SiteEventName, Record<string, unknown>> = {
   gallery_open: { kind: 'works' },
   course_open: { course: SVC },
   course_register_click: { course: SVC },
+  reviews_open: { from: 'hero' },
+  review_form_open: { sp: SVC },
+  review_success: { sp: SVC, stars: 5 },
+  review_error: { sp: SVC, code: 'no_stars' },
   booking_open: { from: 'services', svc: SVC },
   booking_step: { step: 'datetime' },
   booking_submit: { svc: SVC, sp: SVC, loc: SVC, any: true },
@@ -125,6 +129,12 @@ describe('parseBatch — an invalid event drops only itself', () => {
       event('salon_click', { slug: 'antheris', pos: 5000 }),
       event('salon_click', { slug: 'antheris', pos: 1.5 }),
       event('branch_switch', {}),
+      event('reviews_open', { from: 'footer' }),
+      event('review_form_open', {}), // the specialist is required
+      event('review_success', { sp: SVC, stars: 0 }),
+      event('review_success', { sp: SVC, stars: 6 }),
+      event('review_success', { sp: SVC, stars: 4.5 }),
+      event('review_error', { sp: SVC }), // the code is required
       event('page_view', ['home'] as unknown as Record<string, unknown>), // x must be an object
     ];
     const parsed = parseBatch(batch([...bad, event('signup_start', {})]));
@@ -160,6 +170,13 @@ describe('parseBatch — unknown keys are stripped', () => {
       event('booking_submit', { svc: SVC, phone: '+37491000000', name: 'Anna', email: 'a@b.am' }),
     );
     expect(parsed?.props).toEqual({ svc: SVC });
+  });
+
+  it('keeps the stars of a review but never its author or text', () => {
+    const parsed = parseEvent(
+      event('review_success', { sp: SVC, stars: 4, author: 'Anna', text: 'Great cut' }),
+    );
+    expect(parsed?.props).toEqual({ sp: SVC, stars: 4 });
   });
 
   it('strips unknown keys on the event, the session context and the UTM block', () => {

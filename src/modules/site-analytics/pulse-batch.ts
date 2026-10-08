@@ -79,6 +79,12 @@ export const EVENT_PROPS = {
   course_open: z.object({ course: uuid }),
   course_register_click: z.object({ course: uuid }),
 
+  // Reviews (contract §12). Never the author or the text — the stars only.
+  reviews_open: z.object({ from: z.enum(['hero', 'tab']) }),
+  review_form_open: z.object({ sp: uuid }),
+  review_success: z.object({ sp: uuid, stars: z.number().int().min(1).max(5) }),
+  review_error: z.object({ sp: uuid.optional(), code: text(40) }),
+
   // Booking flow
   booking_open: z.object({ from: text(24).optional(), ...bookingTarget }),
   booking_step: z.object({ step: bookingStep }),

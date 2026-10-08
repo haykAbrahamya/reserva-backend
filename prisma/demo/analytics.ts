@@ -12,6 +12,10 @@
  *     console's conversion (booked sessions / sessions that viewed the page,
  *     contract §9) lands around 5%;
  *   · sign-up successes are the pending registrations made on reserva.am;
+ *   · every review in the window gets the visit that left it — the form
+ *     opened for its specialist, review_success with its own stars, at its
+ *     createdAt — again minus the ~10% a tracker misses; a few more visits
+ *     read the reviews or open the form and leave without sending;
  *   · every session reads like a real visit in the console's timeline: a
  *     third of browsing visits bounce; a booking visit looks at the category
  *     and specialist it then books; many bookers came 1–3 times on earlier
@@ -289,10 +293,22 @@ interface BookingInfo {
   locale: string | null;
 }
 
+interface ReviewInfo {
+  createdAt: Date;
+  specialistId: string;
+  rating: number;
+}
+
 interface PartnerInfo {
   id: string;
   slug: string;
   bookingsEnabled: boolean;
+  /** A solo pro: the reviews sit on the page itself, not with a team member. */
+  single: boolean;
+  /** The tabbed template, which has a Reviews tab. */
+  tabbed: boolean;
+  /** The page shows a rating at all (it has reviews). */
+  hasReviews: boolean;
   listed: boolean;
   locations: string[];
   services: ServiceInfo[];
@@ -300,6 +316,7 @@ interface PartnerInfo {
   specialists: string[];
   courses: string[];
   bookings: BookingInfo[];
+  reviews: ReviewInfo[];
   /** Visitors of the partner's own subdomain (localStorage is per origin). */
   pool: Visitor[];
 }
@@ -531,6 +548,25 @@ function lookAround(v: Visit, r: Rng, p: PartnerInfo, page: Page, interest = 1) 
     v.emit('course_open', { course }, page, r.int(5, 40));
     if (r.chance(0.25)) v.emit('course_register_click', { course }, page, r.int(10, 60));
   }
+  if (p.hasReviews && r.chance(0.08 * interest)) readReviews(v, r, p, page);
+  // Opened the form and left without sending it.
+  if (p.specialists.length && r.chance(0.015 * interest)) {
+    const sp = r.pick(p.specialists);
+    openReviewForm(v, r, p, page, sp);
+    if (r.chance(0.25)) v.emit('review_error', { sp, code: 'no_stars' }, page, r.int(15, 90));
+  }
+}
+
+/** Off to the reviews: the rating at the top of the page, or the Reviews tab. */
+function readReviews(v: Visit, r: Rng, p: PartnerInfo, page: Page) {
+  v.emit('reviews_open', { from: p.tabbed && r.chance(0.6) ? 'tab' : 'hero' }, page, r.int(5, 40));
+}
+
+/** "Write a review" for one specialist, from where the page keeps their reviews. */
+function openReviewForm(v: Visit, r: Rng, p: PartnerInfo, page: Page, sp: string) {
+  // A salon keeps reviews with each team member: their popup, or the tab's picker.
+  if (!p.single && r.chance(p.tabbed ? 0.6 : 0.9)) v.emit('specialist_open', { sp }, page, r.int(4, 30));
+  v.emit('review_form_open', { sp }, page, r.int(6, 50));
 }
 
 function contact(v: Visit, r: Rng, p: PartnerInfo, page: Page) {
@@ -660,6 +696,21 @@ function bookingVisit(g: Gen, r: Rng, p: PartnerInfo, b: BookingInfo, windowStar
   v.emit('booking_success', target, page, 1);
   // The booking row is written while the success screen is on its way.
   commit(g, v, bookedAt + 600 - v.duration);
+}
+
+/** The visit behind a real review: mostly a client who has been before, ending at the review's createdAt. */
+function reviewVisit(g: Gen, r: Rng, p: PartnerInfo, review: ReviewInfo) {
+  const onApex = r.chance(0.15);
+  const { visitor, source } = visitorFor(g, r, onApex ? g.apexPool : p.pool, 0.6);
+  const page = partnerPage(p, onApex);
+  const v = new Visit(visitor, source, page);
+  v.emit('page_view', { pt: 'partner' }, page);
+  if (p.hasReviews && r.chance(0.45)) readReviews(v, r, p, page);
+  openReviewForm(v, r, p, page, review.specialistId);
+  // Pressed Send before choosing the stars.
+  if (r.chance(0.12)) v.emit('review_error', { sp: review.specialistId, code: 'no_stars' }, page, r.int(20, 80));
+  v.emit('review_success', { sp: review.specialistId, stars: review.rating }, page, r.int(25, 140));
+  commit(g, v, review.createdAt.getTime() + 400 - v.duration);
 }
 
 /** A browsing (not booking) visit to a salon's page, starting at `start`. */
@@ -841,6 +892,9 @@ async function loadPartners(prisma: PrismaClient, from: Date, now: Date): Promis
       id: true,
       slug: true,
       bookingsEnabled: true,
+      kind: true,
+      template: true,
+      presentation: { select: { reviews: true } },
       marketplaceListed: true,
       coursesEnabled: true,
       locations: { where: { deletedAt: null }, select: { id: true }, orderBy: { id: 'asc' } },
@@ -858,10 +912,18 @@ async function loadPartners(prisma: PrismaClient, from: Date, now: Date): Promis
       },
     },
   });
+  const reviews = await prisma.specialistReview.findMany({
+    where: { partnerId: { in: rows.map((p) => p.id) }, createdAt: { gte: from, lte: now } },
+    select: { partnerId: true, specialistId: true, rating: true, createdAt: true },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
   return rows.map((p) => ({
     id: p.id,
     slug: p.slug!,
     bookingsEnabled: p.bookingsEnabled,
+    single: p.kind === 'single',
+    tabbed: p.template === 'tabbed',
+    hasReviews: (p.presentation?.reviews ?? 0) > 0,
     listed: p.marketplaceListed,
     locations: p.locations.map((l) => l.id),
     services: p.services,
@@ -869,6 +931,8 @@ async function loadPartners(prisma: PrismaClient, from: Date, now: Date): Promis
     specialists: p.specialists.map((s) => s.id),
     courses: p.coursesEnabled ? p.courses.map((c) => c.id) : [],
     bookings: p.bookingsEnabled ? p.bookings : [],
+    // Only the active team can be reviewed on the page.
+    reviews: reviews.filter((v) => v.partnerId === p.id && p.specialists.some((s) => s.id === v.specialistId)),
     pool: [],
   }));
 }
@@ -925,6 +989,11 @@ export async function seedDemoAnalytics(prisma: PrismaClient): Promise<DemoAnaly
       if (rb.chance(TRACKED_SHARE)) {
         plan(b.createdAt.getTime() - 8 * MINUTE, () => bookingVisit(g, rb, p, b, from.getTime()));
       }
+    }
+
+    const rr = rng(`site-analytics:${p.slug}:reviews`);
+    for (const review of p.reviews) {
+      if (rr.chance(TRACKED_SHARE)) plan(review.createdAt.getTime() - 4 * MINUTE, () => reviewVisit(g, rr, p, review));
     }
   }
 

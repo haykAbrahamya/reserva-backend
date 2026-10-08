@@ -38,6 +38,7 @@ const raw = (over: Partial<RawSession> = {}): RawSession => ({
   booked: true,
   contacted: false,
   signedUp: null,
+  reviewed: null,
   bookClicked: true,
   journey: ['page_view', 'category_select', 'book_click', 'booking_open'],
   partners: [{ id: 'p1', name: 'Antheris', slug: 'antheris' }],
@@ -66,15 +67,18 @@ describe('toSessionRow', () => {
       booked: true,
       contacted: false,
       signedUp: false,
+      reviewed: false,
       bookClicked: true,
     });
     expect(
-      toSessionRow(raw({ booked: null, contacted: true, signedUp: true, bookClicked: false }))
-        .outcome,
+      toSessionRow(
+        raw({ booked: null, contacted: true, signedUp: true, reviewed: true, bookClicked: false }),
+      ).outcome,
     ).toEqual({
       booked: false,
       contacted: true,
       signedUp: true,
+      reviewed: true,
       bookClicked: false,
     });
   });
@@ -115,7 +119,13 @@ describe('toSessionRow', () => {
       partners: [],
       journey: [],
       visitorSessions: 0,
-      outcome: { booked: false, contacted: false, signedUp: false, bookClicked: false },
+      outcome: {
+        booked: false,
+        contacted: false,
+        signedUp: false,
+        reviewed: false,
+        bookClicked: false,
+      },
     });
   });
 });
@@ -194,6 +204,7 @@ describe('SiteSessionsService.list — filters', () => {
     ['booked', `HAVING bool_or(e."name" = 'booking_success')`],
     ['contacted', `HAVING bool_or(e."name" = 'contact_click')`],
     ['signup', `HAVING bool_or(e."name" = 'signup_success')`],
+    ['reviewed', `HAVING bool_or(e."name" = 'review_success')`],
     ['bookclick', `HAVING bool_or(e."name" IN ('book_click', 'booking_open'))`],
   ] as const)('outcome=%s → %s', async (outcome, having) => {
     const { service, find } = setup();

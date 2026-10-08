@@ -38,6 +38,10 @@ export interface AnalyticsOverview {
     signups: Kpi;
     /** pending_registrations consumed (activated) in range. */
     activations: Kpi;
+    /** review_form_open — the "Write a review" form opened. */
+    reviewForms: Kpi;
+    /** specialist_reviews created in range — only the public site writes them. */
+    reviews: Kpi;
   };
   /** Every day in range, zeros filled, ascending. */
   series: {
@@ -200,9 +204,16 @@ export interface SessionRow {
   partners: PartnerRef[];
   /**
    * booked = booking_success · contacted = contact_click · signedUp =
-   * signup_success · bookClicked = book_click or booking_open.
+   * signup_success · reviewed = review_success · bookClicked = book_click or
+   * booking_open.
    */
-  outcome: { booked: boolean; contacted: boolean; signedUp: boolean; bookClicked: boolean };
+  outcome: {
+    booked: boolean;
+    contacted: boolean;
+    signedUp: boolean;
+    reviewed: boolean;
+    bookClicked: boolean;
+  };
   /** The first ≤ 12 event names, in order (preview chips). */
   journey: string[];
   /** Sessions of this visitorId, all time, bots excluded — the "returning" hint. */
