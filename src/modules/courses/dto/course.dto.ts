@@ -36,6 +36,14 @@ const courseFields = z.object({
 
   /** Public visibility. false = draft (hidden from the public page). */
   active: z.boolean().default(true),
+
+  /**
+   * Branch the course is held at. Stored on the CURRENT RUN, not the course
+   * (a run is where a branch lives) — the course form just edits it in the same
+   * save: on create it seeds the first run, on update it moves the live run.
+   * Null = no specific branch; omitted = leave as is.
+   */
+  locationId: z.string().trim().min(1).nullable().optional(),
 });
 
 /** Paid courses need a positive price. Only enforced when both fields are

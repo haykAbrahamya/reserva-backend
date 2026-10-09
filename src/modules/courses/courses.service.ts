@@ -55,7 +55,7 @@ export class CoursesService {
   }
 
   async create(partnerId: string, dto: CreateCourseDto) {
-    const { titleI18n, summaryI18n, descriptionI18n, tutorSpecialistId, ...rest } = dto;
+    const { titleI18n, summaryI18n, descriptionI18n, tutorSpecialistId, locationId, ...rest } = dto;
     const courseId = newId();
 
     await this.prisma.$transaction(async (tx) => {
@@ -70,8 +70,9 @@ export class CoursesService {
           descriptionI18n: cleanLocalizedInput(descriptionI18n) ?? Prisma.JsonNull,
         },
       });
-      // Every course starts with one open run so it's immediately usable.
-      await this.cohorts.createInitial(partnerId, courseId, tx);
+      // Every course starts with one open run so it's immediately usable — at
+      // the branch the form picked, if any.
+      await this.cohorts.createInitial(partnerId, courseId, tx, locationId ?? null);
     });
 
     return this.get(partnerId, courseId);
@@ -79,7 +80,7 @@ export class CoursesService {
 
   async update(partnerId: string, id: string, dto: UpdateCourseDto) {
     await this.assertExists(partnerId, id);
-    const { titleI18n, summaryI18n, descriptionI18n, tutorSpecialistId, ...rest } = dto;
+    const { titleI18n, summaryI18n, descriptionI18n, tutorSpecialistId, locationId, ...rest } = dto;
 
     const data: Prisma.CourseUncheckedUpdateInput = { ...rest };
     if (tutorSpecialistId !== undefined) {
@@ -89,7 +90,12 @@ export class CoursesService {
     if (summaryI18n !== undefined) data.summaryI18n = cleanLocalizedInput(summaryI18n) ?? Prisma.JsonNull;
     if (descriptionI18n !== undefined) data.descriptionI18n = cleanLocalizedInput(descriptionI18n) ?? Prisma.JsonNull;
 
-    await this.prisma.course.update({ where: { id }, data });
+    // The branch belongs to the live run — moved in the same transaction, so the
+    // course and its branch are saved together or not at all.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.course.update({ where: { id }, data });
+      if (locationId !== undefined) await this.cohorts.setCurrentLocation(partnerId, id, locationId, tx);
+    });
     return this.get(partnerId, id);
   }
 

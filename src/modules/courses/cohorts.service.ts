@@ -30,9 +30,30 @@ export class CohortsService {
 
   /** Create a course's first run inside the create-course transaction. Runs are
    *  born `open` (accepting members) so a new course is immediately usable. */
-  async createInitial(partnerId: string, courseId: string, tx: Prisma.TransactionClient) {
+  async createInitial(
+    partnerId: string,
+    courseId: string,
+    tx: Prisma.TransactionClient,
+    locationId: string | null = null,
+  ) {
+    if (locationId) await this.assertLocation(partnerId, locationId);
     await tx.courseCohort.create({
-      data: { id: newId(), partnerId, courseId, status: 'open' },
+      data: { id: newId(), partnerId, courseId, status: 'open', locationId },
+    });
+  }
+
+  /** Move the course's live (non-archived) run to a branch — the course form's
+   *  "Branch" field. Null clears it. */
+  async setCurrentLocation(
+    partnerId: string,
+    courseId: string,
+    locationId: string | null,
+    tx: Prisma.TransactionClient,
+  ) {
+    if (locationId) await this.assertLocation(partnerId, locationId);
+    await tx.courseCohort.updateMany({
+      where: { courseId, partnerId, deletedAt: null, status: { not: 'archived' } },
+      data: { locationId },
     });
   }
 
@@ -102,13 +123,19 @@ export class CohortsService {
   /**
    * "Start a new run" (the user's "start the same course from zero"): archive the
    * current live run and create a fresh `open` one, atomically. The new run can
-   * carry over run details (dates/capacity/branch) if the caller supplies them.
+   * carry over run details (dates/capacity/branch) if the caller supplies them;
+   * the BRANCH carries over on its own — a course doesn't move because it restarts.
    */
   async startNewRun(partnerId: string, courseId: string, seed: StartNewRunDto) {
     await this.assertCourse(partnerId, courseId);
     if (seed.locationId) await this.assertLocation(partnerId, seed.locationId);
 
     return this.prisma.$transaction(async (tx) => {
+      const previous = await tx.courseCohort.findFirst({
+        where: { courseId, partnerId, deletedAt: null, status: { not: 'archived' } },
+        orderBy: { createdAt: 'desc' },
+        select: { locationId: true },
+      });
       // Archive any live (non-archived) run for this course.
       await tx.courseCohort.updateMany({
         where: { courseId, partnerId, deletedAt: null, status: { not: 'archived' } },
@@ -120,7 +147,8 @@ export class CohortsService {
           partnerId,
           courseId,
           status: 'open',
-          locationId: seed.locationId ?? null,
+          // undefined = keep the branch; an explicit null clears it.
+          locationId: seed.locationId !== undefined ? seed.locationId : (previous?.locationId ?? null),
           startDate: seed.startDate ? new Date(seed.startDate) : null,
           endDate: seed.endDate ? new Date(seed.endDate) : null,
           scheduleText: seed.scheduleText ?? '',

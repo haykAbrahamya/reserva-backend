@@ -467,6 +467,10 @@ model Location {
   nameI18n  Json?
   address   String
   phone     String @default("")
+  /// The branch's own WhatsApp, digits only (E.164 without the +). Empty = not
+  /// set: the public page then falls back to the partner-wide WhatsApp in
+  /// `PartnerPresentation`.
+  whatsapp  String @default("")
 
   /// Structured place, for filtering and facets. NULLABLE on purpose: existing
   /// branches predate this column and must keep working. It is required at the

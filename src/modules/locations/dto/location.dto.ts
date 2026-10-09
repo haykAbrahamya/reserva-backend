@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { weekScheduleSchema } from '@/common/schemas/week-schedule.schema';
 import { localizedTextSchema } from '@/common/schemas/localized';
+import { whatsappNumberSchema } from '@/common/schemas/whatsapp';
 import { paginationSchema } from '@/common/dto/pagination';
 
 export const createLocationSchema = z.object({
@@ -18,6 +19,8 @@ export const createLocationSchema = z.object({
    */
   areaKey: z.string().trim().min(1).nullable().optional(),
   phone: z.string().trim().max(40).default(''),
+  /** The branch's own WhatsApp (stored as digits). Empty = use the partner's. */
+  whatsapp: whatsappNumberSchema,
   hours: weekScheduleSchema.optional(),
   /** Geo coordinates from the map picker. Nullable to allow clearing the pin. */
   lat: z.number().min(-90).max(90).nullable().optional(),
