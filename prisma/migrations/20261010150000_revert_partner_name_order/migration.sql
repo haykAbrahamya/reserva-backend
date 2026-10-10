@@ -1,0 +1,11 @@
+-- Reverts 20261010130000_partner_name_order (the specialist name-order display
+-- preference was dropped; the fix was a one-time data correction instead).
+--
+-- Forward-only on purpose: 20261010130000 was already pushed, so an environment
+-- may have applied it. Dropping the column in a NEW migration keeps every
+-- environment's migration history consistent:
+--   • already applied 130000 → this drops the column;
+--   • not yet applied        → deploy adds it, then this drops it (net zero).
+-- IF EXISTS makes it a no-op wherever the column is already gone. The column
+-- only ever held a display flag (default false) — no data is lost.
+ALTER TABLE "partners" DROP COLUMN IF EXISTS "specialistNamesSurnameFirst";

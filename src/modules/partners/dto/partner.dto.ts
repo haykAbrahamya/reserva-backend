@@ -81,8 +81,6 @@ export const updatePartnerSchema = z.object({
   supportWidget: z.enum(['support', 'book', 'hidden']).optional(),
   /** Default language for the public client page (first-time visitors). */
   defaultLocale: z.enum(['hy', 'en', 'ru']).optional(),
-  /** Specialist names are typed surname first → shown given-name first. */
-  specialistNamesSurnameFirst: z.boolean().optional(),
   /** Public handle for slug.reserva.am. Lowercase letters, numbers, hyphens. */
   slug: z
     .string()

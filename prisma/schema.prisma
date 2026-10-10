@@ -166,10 +166,6 @@ model Partner {
   /// A visitor's own saved language choice always wins over this. Presentation-
   /// only; defaults to Armenian (our primary market).
   defaultLocale String @default("hy")
-  /// The salon types specialist names SURNAME first ("Aghajanyan Mari"). When
-  /// set, every place that shows a specialist name puts the given name first
-  /// ("Mari Aghajanyan"). Display-only — stored names are never rewritten.
-  specialistNamesSurnameFirst Boolean @default(false)
 
   // Branding
   accent String // primary brand color (hex)
