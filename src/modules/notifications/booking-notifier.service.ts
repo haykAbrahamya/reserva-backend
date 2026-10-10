@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, NotificationType } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { newId } from '@/common/ids';
+import { displayPersonName } from '@/common/utils/person-name';
 import { PushService } from './push.service';
 import { TelegramService } from './telegram.service';
 
@@ -188,14 +189,23 @@ export class BookingNotifier {
       where: { id: b.clientId },
       select: {
         telegramChatId: true,
-        partner: { select: { name: true, _count: { select: { locations: { where: { deletedAt: null } } } } } },
+        partner: {
+          select: {
+            name: true,
+            specialistNamesSurnameFirst: true,
+            _count: { select: { locations: { where: { deletedAt: null } } } },
+          },
+        },
       },
     });
     if (!client?.telegramChatId) return; // not connected — nothing to do
 
     const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
-    const sp = b.specialist?.name ? ` with ${escapeHtml(b.specialist.name)}` : '';
+    const spName = b.specialist?.name
+      ? displayPersonName(b.specialist.name, client.partner?.specialistNamesSurnameFirst)
+      : '';
+    const sp = spName ? ` with ${escapeHtml(spName)}` : '';
     // A salon with several branches: tell the client which one to go to.
     const multiBranch = (client.partner?._count.locations ?? 0) > 1;
     const place =
@@ -292,7 +302,15 @@ export class BookingNotifier {
 
     const when = formatWhen(b.startAt);
     const svc = b.service?.name ?? 'appointment';
-    const withSp = b.specialist?.name ? ` with ${b.specialist.name}` : '';
+    // The specialist as the salon shows names (given name first if they type surname first).
+    const partnerPrefs = await this.prisma.partner.findUnique({
+      where: { id: b.partnerId },
+      select: { specialistNamesSurnameFirst: true },
+    });
+    const spName = b.specialist?.name
+      ? displayPersonName(b.specialist.name, partnerPrefs?.specialistNamesSurnameFirst)
+      : null;
+    const withSp = spName ? ` with ${spName}` : '';
     // Admins of a multi-branch salon see every branch's bookings: name it.
     const branches = await this.prisma.location.count({ where: { partnerId: b.partnerId, deletedAt: null } });
     const branch = branches > 1 && b.location?.name ? b.location.name : null;
@@ -305,7 +323,7 @@ export class BookingNotifier {
       bookingId: b.id,
       clientName: b.clientName,
       service: svc,
-      specialist: b.specialist?.name ?? null,
+      specialist: spName,
       ...(branch ? { location: branch } : {}),
       startAt: new Date(b.startAt).toISOString(),
     };
