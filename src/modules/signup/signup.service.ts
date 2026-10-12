@@ -10,6 +10,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
+import { assertSlugNotReserved, isReservedSlug } from '@/common/utils/reserved-slugs';
 import type { SignupDto } from './dto/signup.dto';
 import { ProductsService } from '@/modules/products/products.service';
 
@@ -228,6 +229,7 @@ export class SignupService {
   // ── guards ────────────────────────────────────────────────
 
   private async assertSlugFree(slug: string) {
+    assertSlugNotReserved(slug);
     const existing = await this.prisma.partner.findUnique({ where: { slug }, select: { id: true } });
     if (existing) {
       throw AppException.conflict(ErrorCode.SLUG_TAKEN, `The handle "${slug}" is already taken`);
@@ -257,7 +259,7 @@ export class SignupService {
   /** Is a slug available for signup (live check on the marketing form)? */
   async slugAvailable(slug: string): Promise<boolean> {
     const normalized = slugify(slug);
-    if (normalized.length < 2) return false;
+    if (normalized.length < 2 || isReservedSlug(normalized)) return false;
     const taken = await this.prisma.partner.findUnique({
       where: { slug: normalized },
       select: { id: true },

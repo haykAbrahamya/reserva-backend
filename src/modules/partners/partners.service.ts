@@ -6,6 +6,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
+import { assertSlugNotReserved } from '@/common/utils/reserved-slugs';
 import { cleanLocalizedInput } from '@/common/schemas/localized';
 import { WEEKDAYS, type WeekScheduleInput } from '@/common/schemas/week-schedule.schema';
 import { MINUTES_PER_DAY, minutesToTime, weeklyWorkingWindows } from '@/common/utils/availability';
@@ -181,6 +182,7 @@ export class PartnersService {
    * password so the operator can hand it over.
    */
   async create(dto: CreatePartnerDto) {
+    assertSlugNotReserved(dto.slug);
     const partnerId = newId();
     const generatedOtp = dto.admin.password ? null : this.passwords.generateOtp();
     const passwordHash = await this.passwords.hash(dto.admin.password ?? generatedOtp!);
@@ -237,8 +239,16 @@ export class PartnersService {
     await this.assertExists(partnerId);
     const { presentation, ...rest } = dto;
 
-    // Slug must be globally unique (when changing it to a new value).
+    // A new handle must be free, and must not be one of Reserva's own
+    // addresses. The partner's CURRENT handle is never re-checked against the
+    // reserved list, so a partner that keeps its slug can always save.
     if (rest.slug !== undefined) {
+      const current = await this.prisma.partner.findUnique({
+        where: { id: partnerId },
+        select: { slug: true },
+      });
+      if (rest.slug !== current?.slug) assertSlugNotReserved(rest.slug);
+
       const taken = await this.prisma.partner.findFirst({
         where: { slug: rest.slug, id: { not: partnerId } },
         select: { id: true },

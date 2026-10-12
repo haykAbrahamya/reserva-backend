@@ -19,6 +19,7 @@ import { AppException } from '@/common/errors/app.exception';
 import { ErrorCode } from '@/common/errors/error-codes';
 import { newId } from '@/common/ids';
 import { normalizePhone } from '@/common/utils/phone';
+import { assertSlugNotReserved } from '@/common/utils/reserved-slugs';
 import { paginate, pageArgs } from '@/common/dto/pagination';
 import type { CreatePartnerDto, UpdatePartnerDto } from '@/modules/partners/dto/partner.dto';
 import type {
@@ -635,6 +636,7 @@ export class PlatformPartnersService {
   }
 
   private async assertSlugFree(slug: string) {
+    assertSlugNotReserved(slug);
     const existing = await this.prisma.partner.findUnique({ where: { slug }, select: { id: true } });
     if (existing) {
       throw AppException.conflict(ErrorCode.SLUG_TAKEN, `The slug "${slug}" is already in use`);
