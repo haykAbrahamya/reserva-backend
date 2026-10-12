@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '@/auth/decorators';
 import { SiteAnalyticsService } from '@/modules/site-analytics/site-analytics.service';
 import { SiteSessionsService } from '@/modules/site-analytics/site-sessions.service';
+import { SiteToolsService } from '@/modules/site-analytics/site-tools.service';
 import {
   AnalyticsClearQueryDto,
   AnalyticsEventsQueryDto,
@@ -30,6 +31,7 @@ export class PlatformSiteAnalyticsController {
   constructor(
     private readonly analytics: SiteAnalyticsService,
     private readonly visits: SiteSessionsService,
+    private readonly tools: SiteToolsService,
   ) {}
 
   @Get('bounds')
@@ -52,6 +54,14 @@ export class PlatformSiteAnalyticsController {
   @ApiOperation({ summary: 'Per-partner views, visitors, funnel, bookings and contact clicks' })
   partners(@Query() q: AnalyticsRangeQueryDto) {
     return this.analytics.partners(q);
+  }
+
+  @Get('tools')
+  @ApiOperation({
+    summary: 'tools.reserva.am: tools opened, edited, exported and sent, and sign-ups they led to',
+  })
+  toolsReport(@Query() q: AnalyticsRangeQueryDto) {
+    return this.tools.report(q);
   }
 
   @Get('sources')

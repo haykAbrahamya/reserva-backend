@@ -206,6 +206,17 @@ describe('SiteIngestService.ingest', () => {
     expect(state.sessions.get(SID)).toMatchObject({ isBot: true, isInternal: true });
   });
 
+  it('files a visit under its site: tools.reserva.am names it, reserva.am names none', async () => {
+    const tools = setup();
+    const toolView = ev('page_view', { pt: 'tool', tool: 'priceList', lng: 'hy' }, { p: '/price-list', h: 'tools.reserva.am' });
+    await tools.service.ingest(seal(batch([toolView], { lh: 'tools.reserva.am', site: 'tools' })), IP, IPHONE);
+    expect(tools.state.sessions.get(SID)).toMatchObject({ site: 'tools', landingHost: 'tools.reserva.am' });
+
+    const web = setup();
+    await web.service.ingest(seal(batch([ev('page_view', { pt: 'home' })])), IP, IPHONE);
+    expect(web.state.sessions.get(SID)).toMatchObject({ site: 'web' });
+  });
+
   it('writes nothing for a tampered, invalid or empty payload', async () => {
     const { db, state, service } = setup();
     const good = seal(batch([ev('page_view', { pt: 'home' })]));

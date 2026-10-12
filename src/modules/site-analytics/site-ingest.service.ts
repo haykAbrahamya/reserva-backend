@@ -154,6 +154,7 @@ export class SiteIngestService {
       screenH: s.sh ?? null,
       isBot: isBotUserAgent(userAgent),
       isInternal: s.int === true,
+      site: s.site ?? 'web',
     };
   }
 }

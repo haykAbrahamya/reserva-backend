@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { daysInclusive, isCalendarDay } from '../calendar-day';
+import { SITES } from '../pulse-batch';
 import { CHANNELS } from '../traffic-source';
 
 /**
@@ -25,7 +26,10 @@ const includeInternal = z
   .optional()
   .transform((v) => v === 'true' || v === '1');
 
-const rangeFields = z.object({ from: calendarDay, to: calendarDay, includeInternal });
+/** Which site a report covers; reserva.am unless asked otherwise, so older consoles keep their numbers. */
+const site = z.enum(SITES).default('web');
+
+const rangeFields = z.object({ from: calendarDay, to: calendarDay, includeInternal, site });
 
 function checkRange(q: { from: string; to: string }, ctx: z.RefinementCtx) {
   // Skip when a day itself is invalid; that issue is already reported.
@@ -46,7 +50,7 @@ function checkRange(q: { from: string; to: string }, ctx: z.RefinementCtx) {
   }
 }
 
-/** overview, partners. */
+/** overview, partners, tools. */
 export const analyticsRangeQuerySchema = rangeFields.superRefine(checkRange);
 export class AnalyticsRangeQueryDto extends createZodDto(analyticsRangeQuerySchema) {}
 export type AnalyticsRangeQuery = z.infer<typeof analyticsRangeQuerySchema>;
@@ -76,6 +80,11 @@ export const analyticsEventsQuerySchema = rangeFields
       .regex(/^[a-z_]{1,40}$/, 'Expected an event name')
       .optional(),
     partnerId: z.string().uuid().optional(),
+    /** Events of one tool on tools.reserva.am (props.tool). */
+    tool: z
+      .string()
+      .regex(/^[a-z][a-zA-Z0-9]{1,31}$/, 'Expected a tool id')
+      .optional(),
   })
   .superRefine(checkRange);
 export class AnalyticsEventsQueryDto extends createZodDto(analyticsEventsQuerySchema) {}
@@ -83,7 +92,8 @@ export type AnalyticsEventsQuery = z.infer<typeof analyticsEventsQuerySchema>;
 
 /**
  * What a session achieved (contract §11). `bounced` = exactly one event, and
- * that one a page_view; `reviewed` = left a review (contract §12).
+ * that one a page_view; `reviewed` = left a review (contract §12). On the
+ * tools: `exported` = took a result away, `cta` = clicked through to reserva.am.
  */
 export const SESSION_OUTCOMES = [
   'booked',
@@ -91,6 +101,8 @@ export const SESSION_OUTCOMES = [
   'signup',
   'reviewed',
   'bookclick',
+  'exported',
+  'cta',
   'bounced',
 ] as const;
 export type SessionOutcome = (typeof SESSION_OUTCOMES)[number];

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { paginate, type Paginated } from '@/common/dto/pagination';
 import { addDays, daysInclusive, eachDay } from './calendar-day';
-import { audience, bookingsIn, eventsIn, yerevanMidnight, type Window } from './report-sql';
+import { audience, bookingsIn, eventsIn, yerevanMidnight, type Audience, type Window } from './report-sql';
 import type {
   AnalyticsEventsQuery,
   AnalyticsRangeQuery,
@@ -120,14 +120,14 @@ export class SiteAnalyticsService {
 
     const [now, before, stored, storedBefore, daily, bookingsDaily, contacts, partners] =
       await Promise.all([
-        this.eventKpis(q, q.includeInternal),
-        this.eventKpis(prev, q.includeInternal),
+        this.eventKpis(q, q),
+        this.eventKpis(prev, q),
         this.storedKpis(q),
         this.storedKpis(prev),
-        this.dailyTraffic(q, q.includeInternal),
+        this.dailyTraffic(q, q),
         this.dailyBookings(q),
-        this.contactChannels(q, q.includeInternal),
-        this.partnerAggregates(q, q.includeInternal),
+        this.contactChannels(q, q),
+        this.partnerAggregates(q, q),
       ]);
 
     const kpi = (value: number, prevValue: number): Kpi => ({ value, prev: prevValue });
@@ -166,8 +166,8 @@ export class SiteAnalyticsService {
 
   async partners(q: AnalyticsRangeQuery): Promise<AnalyticsPartners> {
     const [rows, all] = await Promise.all([
-      this.partnerAggregates(q, q.includeInternal),
-      this.partnerTotals(q, q.includeInternal),
+      this.partnerAggregates(q, q),
+      this.partnerTotals(q, q),
     ]);
     const sum = (pick: (r: PartnerAggregate) => number) =>
       rows.reduce((total, r) => total + pick(r), 0);
@@ -197,7 +197,7 @@ export class SiteAnalyticsService {
     // Sessions with an event in range (on the partner, when one is given).
     const sessions = Prisma.sql`
       FROM "site_sessions" s
-      WHERE ${audience(q.includeInternal)}
+      WHERE ${audience(q)}
         AND s."id" IN (
           SELECT e."sessionId" FROM "site_events" e
           WHERE ${eventsIn(q)}
@@ -249,9 +249,10 @@ export class SiteAnalyticsService {
 
   async events(q: AnalyticsEventsQuery): Promise<Paginated<AnalyticsEventRow>> {
     const where = Prisma.sql`
-      WHERE ${eventsIn(q)} AND ${audience(q.includeInternal)}
+      WHERE ${eventsIn(q)} AND ${audience(q)}
       ${q.name ? Prisma.sql`AND e."name" = ${q.name}` : Prisma.empty}
-      ${q.partnerId ? Prisma.sql`AND e."partnerId" = ${q.partnerId}` : Prisma.empty}`;
+      ${q.partnerId ? Prisma.sql`AND e."partnerId" = ${q.partnerId}` : Prisma.empty}
+      ${q.tool ? Prisma.sql`AND e."props"->>'tool' = ${q.tool}` : Prisma.empty}`;
 
     // Newest first. A batch's events share one server time, so the client
     // clock breaks the tie (it orders events within a batch), then the id.
@@ -353,7 +354,7 @@ export class SiteAnalyticsService {
 
   // ── Building blocks ──────────────────────────────────────────
 
-  private async eventKpis(w: Window, includeInternal: boolean): Promise<EventKpis> {
+  private async eventKpis(w: Window, a: Audience): Promise<EventKpis> {
     const [row] = await this.prisma.$queryRaw<EventKpis[]>`
       SELECT
         count(DISTINCT e."visitorId")::int AS "visitors",
@@ -368,7 +369,7 @@ export class SiteAnalyticsService {
         (count(*) FILTER (WHERE e."name" = 'review_form_open'))::int AS "reviewForms"
       FROM "site_events" e
       JOIN "site_sessions" s ON s."id" = e."sessionId"
-      WHERE ${eventsIn(w)} AND ${audience(includeInternal)}`;
+      WHERE ${eventsIn(w)} AND ${audience(a)}`;
     return row;
   }
 
@@ -388,7 +389,7 @@ export class SiteAnalyticsService {
     return row;
   }
 
-  private dailyTraffic(w: Window, includeInternal: boolean) {
+  private dailyTraffic(w: Window, a: Audience) {
     return this.prisma.$queryRaw<
       { date: string; visitors: number; sessions: number; pageViews: number }[]
     >`
@@ -398,7 +399,7 @@ export class SiteAnalyticsService {
              (count(*) FILTER (WHERE e."name" = 'page_view'))::int AS "pageViews"
       FROM "site_events" e
       JOIN "site_sessions" s ON s."id" = e."sessionId"
-      WHERE ${eventsIn(w)} AND ${audience(includeInternal)}
+      WHERE ${eventsIn(w)} AND ${audience(a)}
       GROUP BY 1`;
   }
 
@@ -411,12 +412,12 @@ export class SiteAnalyticsService {
       GROUP BY 1`;
   }
 
-  private contactChannels(w: Window, includeInternal: boolean) {
+  private contactChannels(w: Window, a: Audience) {
     return this.prisma.$queryRaw<{ channel: string; count: number }[]>`
       SELECT COALESCE(e."props"->>'ch', 'other') AS "channel", count(*)::int AS "count"
       FROM "site_events" e
       JOIN "site_sessions" s ON s."id" = e."sessionId"
-      WHERE e."name" = 'contact_click' AND ${eventsIn(w)} AND ${audience(includeInternal)}
+      WHERE e."name" = 'contact_click' AND ${eventsIn(w)} AND ${audience(a)}
       GROUP BY 1
       ORDER BY "count" DESC, 1`;
   }
@@ -427,13 +428,13 @@ export class SiteAnalyticsService {
    * page_view, and of them, those with a booking_success too — so a booked
    * session is only ever counted among viewing ones and the ratio stays ≤ 1.
    */
-  private partnerAggregates(w: Window, includeInternal: boolean) {
+  private partnerAggregates(w: Window, a: Audience) {
     return this.prisma.$queryRaw<PartnerAggregate[]>`
       WITH scoped AS (
         SELECT e."partnerId", e."sessionId", e."visitorId", e."name", e."props"
         FROM "site_events" e
         JOIN "site_sessions" s ON s."id" = e."sessionId"
-        WHERE e."partnerId" IS NOT NULL AND ${eventsIn(w)} AND ${audience(includeInternal)}
+        WHERE e."partnerId" IS NOT NULL AND ${eventsIn(w)} AND ${audience(a)}
       ),
       ev AS (
         SELECT "partnerId",
@@ -497,13 +498,13 @@ export class SiteAnalyticsService {
    * Partner-wide figures that cannot be summed from the rows: one visitor or
    * session on two salons counts once.
    */
-  private async partnerTotals(w: Window, includeInternal: boolean): Promise<PartnerTotals> {
+  private async partnerTotals(w: Window, a: Audience): Promise<PartnerTotals> {
     const [row] = await this.prisma.$queryRaw<PartnerTotals[]>`
       WITH scoped AS (
         SELECT e."partnerId", e."sessionId", e."visitorId", e."name"
         FROM "site_events" e
         JOIN "site_sessions" s ON s."id" = e."sessionId"
-        WHERE e."partnerId" IS NOT NULL AND ${eventsIn(w)} AND ${audience(includeInternal)}
+        WHERE e."partnerId" IS NOT NULL AND ${eventsIn(w)} AND ${audience(a)}
       ),
       visits AS (
         SELECT "partnerId", "sessionId",

@@ -15,7 +15,20 @@ describe('analytics range query', () => {
       from: '2026-09-01',
       to: '2026-09-30',
       includeInternal: false,
+      site: 'web',
     });
+  });
+
+  it('reports on reserva.am unless tools.reserva.am is asked for, and knows no other site', () => {
+    const site = (v?: string) => {
+      const r = parse({ from: '2026-09-01', to: '2026-09-01', ...(v === undefined ? {} : { site: v }) });
+      return r.success ? r.data.site : 'rejected';
+    };
+    expect(site()).toBe('web');
+    expect(site('web')).toBe('web');
+    expect(site('tools')).toBe('tools');
+    expect(site('vacancies')).toBe('rejected');
+    expect(site('')).toBe('rejected');
   });
 
   it('reads includeInternal as a query-string flag, not a JS truthy string', () => {
@@ -73,6 +86,16 @@ describe('analytics range query', () => {
         partnerId: 'x',
       }).success,
     ).toBe(false);
+  });
+
+  it('filters the event log by a well-formed tool id only', () => {
+    const tool = (v: string) => {
+      const r = analyticsEventsQuerySchema.safeParse({ from: '2026-09-01', to: '2026-09-01', tool: v });
+      return r.success ? r.data.tool : 'rejected';
+    };
+    expect(tool('priceList')).toBe('priceList');
+    expect(tool('price list')).toBe('rejected');
+    expect(tool("x' OR 1=1 --")).toBe('rejected');
   });
 
   it('pages the event log at most 100 rows at a time', () => {

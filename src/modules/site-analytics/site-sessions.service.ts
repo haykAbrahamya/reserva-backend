@@ -30,6 +30,8 @@ const OUTCOME: Record<SessionOutcome, Prisma.Sql> = {
   signup: Prisma.sql`bool_or(e."name" = 'signup_success')`,
   reviewed: Prisma.sql`bool_or(e."name" = 'review_success')`,
   bookclick: Prisma.sql`bool_or(e."name" IN ('book_click', 'booking_open'))`,
+  exported: Prisma.sql`bool_or(e."name" = 'tool_export')`,
+  cta: Prisma.sql`bool_or(e."name" = 'cta_click')`,
   // Landed and left: one event, and that one a page view.
   bounced: Prisma.sql`count(*) = 1 AND bool_and(e."name" = 'page_view')`,
 };
@@ -63,6 +65,7 @@ export interface RawSession {
   landingPath: string | null;
   landingHost: string | null;
   isInternal: boolean;
+  site: string;
   /** Session columns — the fallback for a session that has no events left. */
   startedAt: Date;
   lastSeenAt: Date;
@@ -75,6 +78,8 @@ export interface RawSession {
   signedUp: boolean | null;
   reviewed: boolean | null;
   bookClicked: boolean | null;
+  exported: boolean | null;
+  ctaClicked: boolean | null;
   journey: string[] | null;
   partners: PartnerRef[] | null;
   visitorSessions: number | null;
@@ -105,7 +110,7 @@ export class SiteSessionsService {
       SELECT e."sessionId" AS "id", min(e."createdAt") AS "firstAt"
       FROM "site_events" e
       JOIN "site_sessions" s ON s."id" = e."sessionId"
-      WHERE ${audience(q.includeInternal)}
+      WHERE ${audience(q)}
         ${q.channel ? Prisma.sql`AND s."channel" = ${q.channel}` : Prisma.empty}
         AND e."sessionId" IN (
           SELECT e."sessionId" FROM "site_events" e
@@ -159,6 +164,8 @@ export class SiteSessionsService {
           bool_or("name" = 'signup_success') AS "signedUp",
           bool_or("name" = 'review_success') AS "reviewed",
           bool_or("name" IN ('book_click', 'booking_open')) AS "bookClicked",
+          bool_or("name" = 'tool_export') AS "exported",
+          bool_or("name" = 'cta_click') AS "ctaClicked",
           array_agg("name" ORDER BY "seq") FILTER (WHERE "seq" <= 12) AS "journey"
         FROM ev
         GROUP BY "sessionId"
@@ -185,9 +192,10 @@ export class SiteSessionsService {
       )
       SELECT s."id", s."visitorId", s."channel", s."utmCampaign", s."referrerHost",
              s."deviceType", s."browser", s."os", s."country", s."city", s."language",
-             s."landingPath", s."landingHost", s."isInternal", s."startedAt", s."lastSeenAt",
+             s."landingPath", s."landingHost", s."isInternal", s."site", s."startedAt", s."lastSeenAt",
              st."firstAt", st."lastAt", st."eventCount", st."pageViews",
-             st."booked", st."contacted", st."signedUp", st."reviewed", st."bookClicked", st."journey",
+             st."booked", st."contacted", st."signedUp", st."reviewed", st."bookClicked",
+             st."exported", st."ctaClicked", st."journey",
              t."partners", v."visitorSessions"
       FROM "site_sessions" s
       LEFT JOIN stats st ON st."sessionId" = s."id"
@@ -277,6 +285,7 @@ export function toSessionRow(r: RawSession): SessionRow {
     landingPath: r.landingPath,
     landingHost: r.landingHost,
     isInternal: r.isInternal,
+    site: r.site,
     eventCount: r.eventCount ?? 0,
     pageViews: r.pageViews ?? 0,
     partners: (r.partners ?? []).slice(0, 5),
@@ -286,6 +295,8 @@ export function toSessionRow(r: RawSession): SessionRow {
       signedUp: r.signedUp === true,
       reviewed: r.reviewed === true,
       bookClicked: r.bookClicked === true,
+      exported: r.exported === true,
+      ctaClicked: r.ctaClicked === true,
     },
     journey: (r.journey ?? []).slice(0, 12),
     visitorSessions: r.visitorSessions ?? 0,

@@ -29,6 +29,7 @@ const raw = (over: Partial<RawSession> = {}): RawSession => ({
   landingPath: '/',
   landingHost: 'antheris.reserva.am',
   isInternal: false,
+  site: 'web',
   startedAt: new Date('2026-10-01T10:00:00Z'),
   lastSeenAt: new Date('2026-10-01T10:05:00Z'),
   firstAt: new Date('2026-10-01T10:00:00.400Z'),
@@ -40,6 +41,8 @@ const raw = (over: Partial<RawSession> = {}): RawSession => ({
   signedUp: null,
   reviewed: null,
   bookClicked: true,
+  exported: null,
+  ctaClicked: null,
   journey: ['page_view', 'category_select', 'book_click', 'booking_open'],
   partners: [{ id: 'p1', name: 'Antheris', slug: 'antheris' }],
   visitorSessions: 3,
@@ -69,6 +72,8 @@ describe('toSessionRow', () => {
       signedUp: false,
       reviewed: false,
       bookClicked: true,
+      exported: false,
+      ctaClicked: false,
     });
     expect(
       toSessionRow(
@@ -80,7 +85,15 @@ describe('toSessionRow', () => {
       signedUp: true,
       reviewed: true,
       bookClicked: false,
+      exported: false,
+      ctaClicked: false,
     });
+  });
+
+  it('carries the site, and the tools outcomes of a tools visit', () => {
+    const row = toSessionRow(raw({ site: 'tools', booked: null, bookClicked: null, exported: true, ctaClicked: true }));
+    expect(row.site).toBe('tools');
+    expect(row.outcome).toMatchObject({ booked: false, exported: true, ctaClicked: true });
   });
 
   it('caps partners at 5 and the journey at 12', () => {
@@ -189,6 +202,7 @@ const range = {
   page: 1,
   pageSize: 25,
   includeInternal: false,
+  site: 'web' as const,
 };
 
 describe('SiteSessionsService.list — filters', () => {
@@ -206,6 +220,8 @@ describe('SiteSessionsService.list — filters', () => {
     ['signup', `HAVING bool_or(e."name" = 'signup_success')`],
     ['reviewed', `HAVING bool_or(e."name" = 'review_success')`],
     ['bookclick', `HAVING bool_or(e."name" IN ('book_click', 'booking_open'))`],
+    ['exported', `HAVING bool_or(e."name" = 'tool_export')`],
+    ['cta', `HAVING bool_or(e."name" = 'cta_click')`],
   ] as const)('outcome=%s → %s', async (outcome, having) => {
     const { service, find } = setup();
     await service.list({ ...range, outcome });
@@ -223,6 +239,14 @@ describe('SiteSessionsService.list — filters', () => {
     const sql = staff.find('ORDER BY "firstAt" DESC').sql;
     expect(sql).toContain(`NOT s."isBot"`);
     expect(sql).not.toContain('isInternal');
+  });
+
+  it('lists one site’s visits, the site bound as a parameter', async () => {
+    const { service, find } = setup();
+    await service.list({ ...range, site: 'tools' });
+    const page = find('ORDER BY "firstAt" DESC');
+    expect(page.sql).toContain('s."site" = ?');
+    expect(page.values).toContain('tools');
   });
 
   it('binds partner and channel as parameters, never as SQL text', async () => {

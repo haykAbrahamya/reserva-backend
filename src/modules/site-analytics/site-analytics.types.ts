@@ -198,6 +198,8 @@ export interface SessionRow {
   landingPath: string | null;
   landingHost: string | null;
   isInternal: boolean;
+  /** web (reserva.am) | tools (tools.reserva.am). */
+  site: string;
   eventCount: number;
   pageViews: number;
   /** Partners touched, in first-seen order, at most 5. */
@@ -205,7 +207,8 @@ export interface SessionRow {
   /**
    * booked = booking_success · contacted = contact_click · signedUp =
    * signup_success · reviewed = review_success · bookClicked = book_click or
-   * booking_open.
+   * booking_open · exported = tool_export · ctaClicked = cta_click (the last
+   * two on tools.reserva.am).
    */
   outcome: {
     booked: boolean;
@@ -213,6 +216,8 @@ export interface SessionRow {
     signedUp: boolean;
     reviewed: boolean;
     bookClicked: boolean;
+    exported: boolean;
+    ctaClicked: boolean;
   };
   /** The first ≤ 12 event names, in order (preview chips). */
   journey: string[];
@@ -248,4 +253,87 @@ export interface SessionDetail {
     eventCount: number;
     booked: boolean;
   }[];
+}
+
+// ── Tools — tools.reserva.am (GET /platform/analytics/tools) ─────────────────
+// Choices and counts only: what was opened, made and sent — never what was typed.
+
+/** How results left a tool, by tool_export `via`. */
+export interface ToolExportsBy {
+  share: number;
+  download: number;
+  pdf: number;
+  whatsapp: number;
+  viber: number;
+  copy: number;
+}
+
+export interface ToolRow {
+  /** The tool's registry id, e.g. 'priceList'. */
+  tool: string;
+  /** page_view on the tool's page. */
+  views: number;
+  /** Distinct visitorId with any event of this tool. */
+  visitors: number;
+  /** tool_edit — page views in which the form was changed. */
+  edits: number;
+  /** tool_export — results taken away. */
+  exports: number;
+  /**
+   * Of the sessions that opened the tool, the share that also took a result
+   * away (0..1) — sessions on both sides, like partner conversion. Null when
+   * no session opened it.
+   */
+  exportRate: number | null;
+  exportsBy: ToolExportsBy;
+  /** cta_click made on this tool's page. */
+  ctaClicks: number;
+  errors: number;
+}
+
+export interface AnalyticsTools {
+  range: Range;
+  kpis: {
+    /** Distinct visitorId on the tools with ≥1 event in range. */
+    visitors: Kpi;
+    sessions: Kpi;
+    /** page_view on a tool's page. */
+    toolViews: Kpi;
+    /** tool_edit. */
+    edits: Kpi;
+    /** tool_export. */
+    exports: Kpi;
+    /** page_view on the visit page — appointment cards opened by clients. */
+    cardViews: Kpi;
+    /** cta_click — links into reserva.am. */
+    ctaClicks: Kpi;
+  };
+  /** Every day in range, zeros filled, ascending. */
+  series: { date: string; visitors: number; sessions: number; toolViews: number; exports: number }[];
+  /** Tools with any event in range, most views first. */
+  tools: ToolRow[];
+  /** tool_export by `via`, most first. */
+  exportsBy: { via: string; count: number }[];
+  /** tool_export by `theme`, most first — the styles that get used. */
+  themes: { theme: string; count: number }[];
+  /** tool_action per tool and action, most first (top 40), with its most chosen value. */
+  actions: { tool: string; act: string; count: number; topValue: string | null; topCount: number }[];
+  /** visit_action by `act`: what clients did with the cards they were sent. */
+  visit: { act: string; count: number }[];
+  /** page_view by interface language (`lng`). */
+  languages: { language: string; views: number }[];
+  /** tool_error per tool and code, most first. */
+  errors: { tool: string | null; code: string; count: number }[];
+  /**
+   * The tools' visitors arriving on reserva.am: booking-site sessions tagged
+   * utm_source=reserva-tools, and how many of those started and finished the
+   * sign-up (from the tracker, so ad blockers can lower them).
+   */
+  toPlatform: {
+    visits: Kpi;
+    signupStarts: Kpi;
+    signups: Kpi;
+    /** By utm_content — the spot that sent them: header, footer, a tool's pitch. */
+    bySpot: { spot: string; visits: number; signups: number }[];
+  };
 }

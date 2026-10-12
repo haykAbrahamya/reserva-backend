@@ -67,6 +67,14 @@ const EXAMPLES: Record<SiteEventName, Record<string, unknown>> = {
   salons_search: { q: 'barber' },
   salons_filter: { cat: 'hair', area: 'yerevan-arabkir' },
   salon_click: { slug: 'antheris', pos: 3 },
+  tool_select: { tool: 'priceList', pos: 2 },
+  tool_edit: { tool: 'freeSlots' },
+  tool_action: { tool: 'beforeAfter', act: 'photo', v: 'after' },
+  tool_export: { tool: 'priceList', via: 'share', theme: 'mocha', n: 12 },
+  tool_error: { tool: 'giftCertificate', code: 'pdf' },
+  cta_click: { from: 'pitch', tool: 'appointmentCard' },
+  visit_action: { act: 'calendar' },
+  pref_change: { what: 'lang', v: 'ru' },
 };
 
 describe('parseBatch — the event catalog', () => {
@@ -100,6 +108,51 @@ describe('parseBatch — the event catalog', () => {
       partnerSlug: 'antheris',
       props: { pt: 'home' },
     });
+  });
+});
+
+describe('parseBatch — tools.reserva.am', () => {
+  const context = { ref: '', lp: '/price-list', lh: 'tools.reserva.am', lang: 'hy-AM', sw: 390, sh: 844 };
+
+  it('reads the site from the session context; none means the booking site', () => {
+    const tools = parseBatch(batch([event('page_view', { pt: 'tools' })], { s: { ...context, site: 'tools' } }));
+    expect(tools?.session.site).toBe('tools');
+    expect(parseBatch(batch([event('page_view', { pt: 'home' })]))?.session.site).toBeUndefined();
+  });
+
+  it('drops a batch whose session names a site that does not exist', () => {
+    expect(parseBatch(batch([event('page_view', { pt: 'home' })], { s: { ...context, site: 'vacancies' } }))).toBeNull();
+  });
+
+  it('takes a tool page view with its tool and interface language', () => {
+    const props = { pt: 'tool', tool: 'priceList', lng: 'hy' };
+    expect(parseEvent(event('page_view', props))?.props).toEqual(props);
+    expect(parseEvent(event('page_view', { pt: 'visit' }))?.props).toEqual({ pt: 'visit' });
+    expect(parseEvent(event('page_view', { pt: 'tool', lng: 'fr' }))).toBeNull();
+  });
+
+  it('keeps tool events to words and counts — a typed name, price or phone never fits', () => {
+    expect(parseEvent(event('tool_action', { tool: 'priceList', act: 'theme', v: 'Anna Beauty' }))).toBeNull();
+    expect(parseEvent(event('tool_export', { tool: 'priceList', via: 'share', theme: '15 000 ֏' }))).toBeNull();
+    expect(parseEvent(event('tool_error', { code: '+374 55 123456' }))).toBeNull();
+    expect(parseEvent(event('cta_click', { from: 'Գնացուցակ' }))).toBeNull();
+    expect(parseEvent(event('tool_export', { tool: 'priceList', via: 'fax' }))).toBeNull();
+    expect(parseEvent(event('tool_export', { tool: 'priceList', via: 'share', n: 5000 }))).toBeNull();
+    expect(parseEvent(event('visit_action', { act: 'share' }))).toBeNull();
+  });
+
+  it('accepts any well-formed tool id, so a new tool ships without a release here', () => {
+    expect(parseEvent(event('tool_edit', { tool: 'loyaltyCard' }))?.props).toEqual({ tool: 'loyaltyCard' });
+    for (const tool of ['Price', 'price list', 'p', '1tool', 'a'.repeat(33)]) {
+      expect(parseEvent(event('tool_edit', { tool }))).toBeNull();
+    }
+  });
+
+  it('strips what a tool event does not catalogue — the draft itself never gets in', () => {
+    const parsed = parseEvent(
+      event('tool_export', { tool: 'priceList', via: 'download', title: 'Anna Beauty', items: ['Gel', 15000] }),
+    );
+    expect(parsed?.props).toEqual({ tool: 'priceList', via: 'download' });
   });
 });
 

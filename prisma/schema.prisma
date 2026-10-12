@@ -1700,6 +1700,8 @@ model SiteSession {
   screenH      Int?
   isBot        Boolean     @default(false)
   isInternal   Boolean     @default(false)
+  /// The Reserva site of the visit: web (reserva.am and the partner pages) | tools (tools.reserva.am)
+  site         String      @default("web")
   events       SiteEvent[]
 
   @@index([startedAt])

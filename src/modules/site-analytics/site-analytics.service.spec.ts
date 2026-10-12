@@ -95,6 +95,7 @@ describe('SiteAnalyticsService.partners — conversion from one population', () 
       from: '2026-09-01',
       to: '2026-10-07',
       includeInternal: false,
+      site: 'web',
     });
 
     expect(report.rows.map((r) => r.conversion)).toEqual([0.075, null, 1]);
@@ -112,9 +113,52 @@ describe('SiteAnalyticsService.partners — conversion from one population', () 
       from: '2026-09-01',
       to: '2026-09-01',
       includeInternal: true,
+      site: 'web',
     });
     expect(report.rows).toEqual([]);
     expect(report.totals).toMatchObject({ visitors: 0, bookings: 0, conversion: null });
+  });
+});
+
+/**
+ * A report covers one site: tools.reserva.am traffic must never move the
+ * booking site's numbers, nor the other way round. Every query over the
+ * tracker's tables filters sessions to the site asked for, as a parameter.
+ */
+describe('SiteAnalyticsService — one site per report', () => {
+  function capture() {
+    const queries: Prisma.Sql[] = [];
+    const $queryRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = Prisma.sql(strings, ...values);
+      queries.push(sql);
+      if (sql.sql.includes('AS "total"')) return [{ total: 0 }];
+      if (sql.sql.includes('ORDER BY e."createdAt" DESC')) return [];
+      return [{}];
+    });
+    return { service: new SiteAnalyticsService({ $queryRaw } as unknown as PrismaService), queries };
+  }
+  const window = { from: '2026-10-01', to: '2026-10-07', includeInternal: false };
+
+  it.each(['web', 'tools'] as const)('scopes overview, partners, sources and events to %s', async (site) => {
+    const { service, queries } = capture();
+    await service.overview({ ...window, site });
+    await service.partners({ ...window, site });
+    await service.sources({ ...window, site });
+    await service.events({ ...window, site, page: 1, pageSize: 25 });
+    const tracked = queries.filter((q) => q.sql.includes('"site_sessions"'));
+    expect(tracked.length).toBeGreaterThan(8);
+    for (const q of tracked) {
+      expect(q.sql).toContain('s."site" = ?');
+      expect(q.values).toContain(site);
+    }
+  });
+
+  it('filters the event log to one tool by its props, as a parameter', async () => {
+    const { service, queries } = capture();
+    await service.events({ ...window, site: 'tools', page: 1, pageSize: 25, tool: 'priceList' });
+    const log = queries.find((q) => q.sql.includes('ORDER BY e."createdAt" DESC'))!;
+    expect(log.sql).toContain(`AND e."props"->>'tool' = ?`);
+    expect(log.values).toContain('priceList');
   });
 });
 

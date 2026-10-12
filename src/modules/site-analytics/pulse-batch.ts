@@ -36,7 +36,30 @@ const uuid = z
   .transform((id) => id.toLowerCase());
 const text = (max: number) => z.string().max(max);
 
-const pageType = z.enum(['home', 'marketplace', 'partner', 'signup', 'other']);
+/**
+ * The Reserva sites that report. `web` is reserva.am with its partner pages —
+ * it names no site on the wire; `tools` is tools.reserva.am.
+ */
+export const SITES = ['web', 'tools'] as const;
+export type Site = (typeof SITES)[number];
+
+/** The last three are tools.reserva.am: its home, a tool, and the visit page a client opens. */
+const pageType = z.enum(['home', 'marketplace', 'partner', 'signup', 'other', 'tools', 'tool', 'visit']);
+/**
+ * A tool's registry id on tools.reserva.am ('priceList', 'beforeAfter'). An
+ * open set on purpose: a new tool ships without a release here.
+ */
+const toolId = z.string().regex(/^[a-z][a-zA-Z0-9]{1,31}$/);
+/** A short machine word — an action, a format, a theme id. Never free text. */
+const word = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .regex(/^[a-z0-9][a-z0-9_-]*$/i);
+/** How a tool's result left the page. */
+const exportVia = z.enum(['share', 'download', 'pdf', 'whatsapp', 'viber', 'copy']);
+/** Small counts: rows in a price list, slots in a story. */
+const count = z.number().int().min(0).max(1000);
 const bookClickFrom = z.enum([
   'hero',
   'nav',
@@ -65,8 +88,12 @@ const bookingTarget = { svc: uuid.optional(), sp: uuid.optional(), loc: uuid.opt
 
 /** Props per event name. */
 export const EVENT_PROPS = {
-  // Everywhere
-  page_view: z.object({ pt: pageType }),
+  // Everywhere. `tool` and `lng` (the interface language) come from tools.reserva.am.
+  page_view: z.object({
+    pt: pageType,
+    tool: toolId.optional(),
+    lng: z.enum(['hy', 'ru', 'en']).optional(),
+  }),
 
   // Partner page
   book_click: z.object({ from: bookClickFrom, ...bookingTarget }),
@@ -104,6 +131,28 @@ export const EVENT_PROPS = {
   salons_search: z.object({ q: text(60) }),
   salons_filter: z.object({ cat: text(80).optional(), area: text(80).optional() }),
   salon_click: z.object({ slug: text(80), pos: z.number().int().min(0).max(1000).optional() }),
+
+  // Tools (tools.reserva.am). Choices and counts only — never what was typed:
+  // no salon names, prices, phones or notes.
+  tool_select: z.object({ tool: toolId, pos: count.optional() }),
+  /** The first change to a tool's form in a page view. */
+  tool_edit: z.object({ tool: toolId }),
+  /** A main action inside a tool: a theme picked, a row added, a photo placed… */
+  tool_action: z.object({ tool: toolId, act: word(24), v: word(40).optional() }),
+  /** A result taken away. */
+  tool_export: z.object({
+    tool: toolId,
+    via: exportVia,
+    theme: word(24).optional(),
+    fmt: word(24).optional(),
+    n: count.optional(),
+  }),
+  tool_error: z.object({ tool: toolId.optional(), code: word(40) }),
+  /** A link from the tools into reserva.am (the booking-page pitch, header, footer). */
+  cta_click: z.object({ from: word(24), tool: toolId.optional() }),
+  /** A client on an appointment card's page: the calendar, the way there, a call, the credit. */
+  visit_action: z.object({ act: z.enum(['calendar', 'directions', 'call', 'made']) }),
+  pref_change: z.object({ what: z.enum(['lang', 'theme']), v: word(12) }),
 } satisfies Record<string, z.AnyZodObject>;
 
 export type SiteEventName = keyof typeof EVENT_PROPS;
@@ -128,6 +177,8 @@ const sessionContextSchema = z.object({
   sh: z.number().int().min(0).max(100_000).optional(),
   /** Staff / internal traffic (contract §6). */
   int: z.boolean().optional(),
+  /** Absent on reserva.am, which predates sites. */
+  site: z.enum(SITES).optional(),
 });
 export type SessionContext = z.infer<typeof sessionContextSchema>;
 
