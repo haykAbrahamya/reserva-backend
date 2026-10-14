@@ -10,6 +10,12 @@ import type { AnalyticsTools, Kpi, ToolRow } from './site-analytics.types';
 export const TOOLS_UTM_SOURCE = 'reserva-tools';
 
 /**
+ * The names ua-parser-js gives the browsers built into apps — where a link in
+ * a reel or an ad opens. "Chrome WebView" is any other Android app's.
+ */
+export const IN_APP_BROWSERS = ['Instagram', 'Facebook', 'TikTok', 'Snapchat', 'Chrome WebView'];
+
+/**
  * Export rate: of the sessions that opened a tool, the share that also took a
  * result away. Sessions on both sides, like partner conversion, so it cannot
  * pass 1; the clamp keeps that promise whatever it is fed.
@@ -35,6 +41,11 @@ interface PlatformKpis {
   signups: number;
 }
 
+interface InAppKpis {
+  sessions: number;
+  opened: number;
+}
+
 interface ToolAggregate {
   tool: string;
   views: number;
@@ -47,6 +58,7 @@ interface ToolAggregate {
   whatsapp: number;
   viber: number;
   copy: number;
+  hold: number;
   ctaClicks: number;
   errors: number;
   viewSessions: number;
@@ -71,22 +83,39 @@ export class SiteToolsService {
     // The equally long period that ends the day before `from`.
     const prev: Window = { from: addDays(q.from, -days), to: addDays(q.from, -1) };
 
-    const [now, before, daily, rows, exportsBy, themes, actions, visit, languages, errors, platform, platformBefore, bySpot] =
-      await Promise.all([
-        this.kpis(q, tools),
-        this.kpis(prev, tools),
-        this.daily(q, tools),
-        this.toolAggregates(q, tools),
-        this.countBy(q, tools, 'tool_export', 'via'),
-        this.countBy(q, tools, 'tool_export', 'theme'),
-        this.actions(q, tools),
-        this.countBy(q, tools, 'visit_action', 'act'),
-        this.languages(q, tools),
-        this.errors(q, tools),
-        this.platformKpis(q, web),
-        this.platformKpis(prev, web),
-        this.platformBySpot(q, web),
-      ]);
+    const [
+      now,
+      before,
+      daily,
+      rows,
+      exportsBy,
+      themes,
+      actions,
+      visit,
+      languages,
+      errors,
+      inApp,
+      inAppBefore,
+      platform,
+      platformBefore,
+      bySpot,
+    ] = await Promise.all([
+      this.kpis(q, tools),
+      this.kpis(prev, tools),
+      this.daily(q, tools),
+      this.toolAggregates(q, tools),
+      this.countBy(q, tools, 'tool_export', 'via'),
+      this.countBy(q, tools, 'tool_export', 'theme'),
+      this.actions(q, tools),
+      this.countBy(q, tools, 'visit_action', 'act'),
+      this.languages(q, tools),
+      this.errors(q, tools),
+      this.inAppKpis(q, tools),
+      this.inAppKpis(prev, tools),
+      this.platformKpis(q, web),
+      this.platformKpis(prev, web),
+      this.platformBySpot(q, web),
+    ]);
 
     const kpi = (value: number, prevValue: number): Kpi => ({ value, prev: prevValue });
     const byDay = new Map(daily.map((d) => [d.date, d]));
@@ -116,6 +145,10 @@ export class SiteToolsService {
       visit: visit.map((r) => ({ act: r.key, count: r.count })),
       languages,
       errors,
+      inApp: {
+        sessions: kpi(inApp.sessions, inAppBefore.sessions),
+        opened: kpi(inApp.opened, inAppBefore.opened),
+      },
       toPlatform: {
         visits: kpi(platform.visits, platformBefore.visits),
         signupStarts: kpi(platform.signupStarts, platformBefore.signupStarts),
@@ -181,6 +214,7 @@ export class SiteToolsService {
           (count(*) FILTER (WHERE "name" = 'tool_export' AND "props"->>'via' = 'whatsapp'))::int AS "whatsapp",
           (count(*) FILTER (WHERE "name" = 'tool_export' AND "props"->>'via' = 'viber'))::int AS "viber",
           (count(*) FILTER (WHERE "name" = 'tool_export' AND "props"->>'via' = 'copy'))::int AS "copy",
+          (count(*) FILTER (WHERE "name" = 'tool_export' AND "props"->>'via' = 'hold'))::int AS "hold",
           (count(*) FILTER (WHERE "name" = 'cta_click'))::int AS "ctaClicks",
           (count(*) FILTER (WHERE "name" = 'tool_error'))::int AS "errors"
         FROM scoped
@@ -259,6 +293,22 @@ export class SiteToolsService {
       ORDER BY "views" DESC, 1`;
   }
 
+  /**
+   * Sessions in an app's built-in browser, and what happened in them. A visit
+   * taken to Chrome keeps its session (apps/tools lib/handoff), so it counts
+   * once, under the browser it started in.
+   */
+  private async inAppKpis(w: Window, a: Audience): Promise<InAppKpis> {
+    const [row] = await this.prisma.$queryRaw<InAppKpis[]>`
+      SELECT
+        (count(DISTINCT e."sessionId") FILTER (WHERE s."browser" IN (${Prisma.join(IN_APP_BROWSERS)})))::int AS "sessions",
+        (count(DISTINCT e."sessionId") FILTER (WHERE e."name" = 'browser_open'))::int AS "opened"
+      FROM "site_events" e
+      JOIN "site_sessions" s ON s."id" = e."sessionId"
+      WHERE ${eventsIn(w)} AND ${audience(a)}`;
+    return row;
+  }
+
   private errors(w: Window, a: Audience) {
     return this.prisma.$queryRaw<AnalyticsTools['errors']>`
       SELECT e."props"->>'tool' AS "tool", e."props"->>'code' AS "code", count(*)::int AS "count"
@@ -322,6 +372,7 @@ function toToolRow(r: ToolAggregate): ToolRow {
       whatsapp: r.whatsapp,
       viber: r.viber,
       copy: r.copy,
+      hold: r.hold,
     },
     ctaClicks: r.ctaClicks,
     errors: r.errors,

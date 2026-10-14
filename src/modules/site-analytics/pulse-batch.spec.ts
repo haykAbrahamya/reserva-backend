@@ -75,6 +75,7 @@ const EXAMPLES: Record<SiteEventName, Record<string, unknown>> = {
   cta_click: { from: 'pitch', tool: 'appointmentCard' },
   visit_action: { act: 'calendar' },
   pref_change: { what: 'lang', v: 'ru' },
+  browser_open: { app: 'instagram', from: 'sheet', how: 'chrome', tool: 'priceList' },
 };
 
 describe('parseBatch — the event catalog', () => {
@@ -139,6 +140,15 @@ describe('parseBatch — tools.reserva.am', () => {
     expect(parseEvent(event('tool_export', { tool: 'priceList', via: 'fax' }))).toBeNull();
     expect(parseEvent(event('tool_export', { tool: 'priceList', via: 'share', n: 5000 }))).toBeNull();
     expect(parseEvent(event('visit_action', { act: 'share' }))).toBeNull();
+  });
+
+  it('takes the way out of an app’s built-in browser, and a result shown there to press and hold', () => {
+    const hold = { tool: 'priceList', via: 'hold', theme: 'mocha' };
+    expect(parseEvent(event('tool_export', hold))?.props).toEqual(hold);
+    const open = { app: 'instagram', from: 'notice', how: 'copy' };
+    expect(parseEvent(event('browser_open', open))?.props).toEqual(open);
+    expect(parseEvent(event('browser_open', { ...open, how: 'safari' }))).toBeNull();
+    expect(parseEvent(event('browser_open', { ...open, app: 'Instagram 352.0' }))).toBeNull();
   });
 
   it('accepts any well-formed tool id, so a new tool ships without a release here', () => {

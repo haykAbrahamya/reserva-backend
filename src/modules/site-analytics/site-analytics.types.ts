@@ -266,6 +266,8 @@ export interface ToolExportsBy {
   whatsapp: number;
   viber: number;
   copy: number;
+  /** Shown to press and hold, inside an app's built-in browser — saving it cannot be confirmed. */
+  hold: number;
 }
 
 export interface ToolRow {
@@ -324,6 +326,17 @@ export interface AnalyticsTools {
   languages: { language: string; views: number }[];
   /** tool_error per tool and code, most first. */
   errors: { tool: string | null; code: string; count: number }[];
+  /**
+   * Visits inside an app's built-in browser (Instagram's, Facebook's…), where a
+   * reel or an ad lands and no file can be saved, and how many of them moved to
+   * a real browser. Results shown there to press and hold are `exportsBy` hold.
+   */
+  inApp: {
+    /** Sessions whose browser is an app's (see IN_APP_BROWSERS). */
+    sessions: Kpi;
+    /** Sessions with a browser_open — taken to Chrome, or their link copied. */
+    opened: Kpi;
+  };
   /**
    * The tools' visitors arriving on reserva.am: booking-site sessions tagged
    * utm_source=reserva-tools, and how many of those started and finished the

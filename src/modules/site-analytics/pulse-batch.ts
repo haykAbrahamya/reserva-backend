@@ -56,8 +56,12 @@ const word = (max: number) =>
     .string()
     .max(max)
     .regex(/^[a-z0-9][a-z0-9_-]*$/i);
-/** How a tool's result left the page. */
-const exportVia = z.enum(['share', 'download', 'pdf', 'whatsapp', 'viber', 'copy']);
+/**
+ * How a tool's result left the page. `hold`: inside an app's built-in browser
+ * (Instagram's, Facebook's), where a download goes nowhere, the image was shown
+ * to press and hold — whether it was then saved, no page can tell.
+ */
+const exportVia = z.enum(['share', 'download', 'pdf', 'whatsapp', 'viber', 'copy', 'hold']);
 /** Small counts: rows in a price list, slots in a story. */
 const count = z.number().int().min(0).max(1000);
 const bookClickFrom = z.enum([
@@ -153,6 +157,17 @@ export const EVENT_PROPS = {
   /** A client on an appointment card's page: the calendar, the way there, a call, the credit. */
   visit_action: z.object({ act: z.enum(['calendar', 'directions', 'call', 'made']) }),
   pref_change: z.object({ what: z.enum(['lang', 'theme']), v: word(12) }),
+  /**
+   * Inside an app's built-in browser: the visitor took the page to Chrome, or
+   * copied its link to open in another browser. `app` is whose browser it was
+   * (instagram, facebook, tiktok, other); `from` the notice or the save sheet.
+   */
+  browser_open: z.object({
+    app: word(16),
+    from: word(16),
+    how: z.enum(['chrome', 'copy']),
+    tool: toolId.optional(),
+  }),
 } satisfies Record<string, z.AnyZodObject>;
 
 export type SiteEventName = keyof typeof EVENT_PROPS;

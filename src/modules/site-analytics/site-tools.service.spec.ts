@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '@/prisma/prisma.service';
-import { SiteToolsService, TOOLS_UTM_SOURCE, exportRate } from './site-tools.service';
+import { IN_APP_BROWSERS, SiteToolsService, TOOLS_UTM_SOURCE, exportRate } from './site-tools.service';
 
 /**
  * The tools report (tools.reserva.am). The SQL runs against Postgres in the
@@ -45,12 +45,16 @@ function setup() {
           whatsapp: 0,
           viber: 0,
           copy: 0,
+          hold: 2,
           ctaClicks: 4,
           errors: 1,
           viewSessions: 30,
           exportSessions: 15,
         },
       ];
+    }
+    if (text.includes(`'browser_open'`)) {
+      return [current ? { sessions: 12, opened: 4 } : { sessions: 5, opened: 1 }];
     }
     if (text.includes('AS "toolViews"') && text.includes('GROUP BY 1')) {
       return [{ date: '2026-10-02', visitors: 9, sessions: 10, toolViews: 12, exports: 5 }];
@@ -125,7 +129,7 @@ describe('SiteToolsService.report', () => {
         edits: 25,
         exports: 18,
         exportRate: 0.5,
-        exportsBy: { share: 11, download: 7, pdf: 0, whatsapp: 0, viber: 0, copy: 0 },
+        exportsBy: { share: 11, download: 7, pdf: 0, whatsapp: 0, viber: 0, copy: 0, hold: 2 },
         ctaClicks: 4,
         errors: 1,
       },
@@ -138,6 +142,18 @@ describe('SiteToolsService.report', () => {
     expect(report.visit).toEqual([{ act: 'calendar', count: 3 }]);
     expect(report.actions[0]).toMatchObject({ act: 'theme', topValue: 'mocha' });
     expect(report.toPlatform.bySpot).toEqual([{ spot: 'price-list', visits: 4, signups: 1 }]);
+  });
+
+  it('counts visits inside apps by their built-in browsers, against the period before', async () => {
+    const { service, queries } = setup();
+    const report = await service.report(q);
+    const inApp = queries.filter((x) => x.sql.includes(`'browser_open'`));
+    expect(inApp).toHaveLength(2);
+    for (const x of inApp) {
+      expect(x.sql).toContain('s."browser" IN (');
+      expect(x.values).toEqual(expect.arrayContaining(IN_APP_BROWSERS));
+    }
+    expect(report.inApp).toEqual({ sessions: { value: 12, prev: 5 }, opened: { value: 4, prev: 1 } });
   });
 
   it('never splices a prop name into the SQL text', async () => {
