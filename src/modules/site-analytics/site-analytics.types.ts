@@ -338,6 +338,22 @@ export interface AnalyticsTools {
     opened: Kpi;
   };
   /**
+   * Who made something: the Instagram accounts results were signed with
+   * (tool_export `ig`), latest first (top 100). Only results whose contact line
+   * held an Instagram — a phone number is never recorded.
+   */
+  accounts: {
+    /** Bare username, lower-case: instagram.com/<handle>. */
+    handle: string;
+    exports: number;
+    /** The tools it exported from, by registry id. */
+    tools: string[];
+    /** ISO time of its latest export in range. */
+    lastAt: string;
+    /** The visit of that latest export, to open its journey. */
+    sessionId: string;
+  }[];
+  /**
    * The tools' visitors arriving on reserva.am: booking-site sessions tagged
    * utm_source=reserva-tools, and how many of those started and finished the
    * sign-up (from the tracker, so ad blockers can lower them).

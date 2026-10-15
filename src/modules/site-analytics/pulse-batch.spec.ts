@@ -70,7 +70,7 @@ const EXAMPLES: Record<SiteEventName, Record<string, unknown>> = {
   tool_select: { tool: 'priceList', pos: 2 },
   tool_edit: { tool: 'freeSlots' },
   tool_action: { tool: 'beforeAfter', act: 'photo', v: 'after' },
-  tool_export: { tool: 'priceList', via: 'share', theme: 'mocha', n: 12 },
+  tool_export: { tool: 'priceList', via: 'share', theme: 'mocha', n: 12, ig: 'anna.beauty' },
   tool_error: { tool: 'giftCertificate', code: 'pdf' },
   cta_click: { from: 'pitch', tool: 'appointmentCard' },
   visit_action: { act: 'calendar' },
@@ -149,6 +149,15 @@ describe('parseBatch — tools.reserva.am', () => {
     expect(parseEvent(event('browser_open', open))?.props).toEqual(open);
     expect(parseEvent(event('browser_open', { ...open, how: 'safari' }))).toBeNull();
     expect(parseEvent(event('browser_open', { ...open, app: 'Instagram 352.0' }))).toBeNull();
+  });
+
+  it('keeps the Instagram username a result is signed with — and only a username', () => {
+    const base = { tool: 'priceList', via: 'download' };
+    expect(parseEvent(event('tool_export', { ...base, ig: 'nails.by_mari' }))?.props).toEqual({ ...base, ig: 'nails.by_mari' });
+    // Anything else in its place is dropped on its own: the export itself is kept.
+    for (const ig of ['+374 91 123456', '@anna.beauty', 'Anna Beauty', 'Anna.Beauty', 'a'.repeat(31), 42]) {
+      expect(parseEvent(event('tool_export', { ...base, ig }))?.props).toEqual(base);
+    }
   });
 
   it('accepts any well-formed tool id, so a new tool ships without a release here', () => {

@@ -56,6 +56,17 @@ function setup() {
     if (text.includes(`'browser_open'`)) {
       return [current ? { sessions: 12, opened: 4 } : { sessions: 5, opened: 1 }];
     }
+    if (text.includes('AS "handle"')) {
+      return [
+        {
+          handle: 'anna.beauty',
+          exports: 3,
+          tools: ['freeSlots', 'priceList'],
+          lastAt: new Date('2026-10-05T10:00:00Z'),
+          sessionId: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+        },
+      ];
+    }
     if (text.includes('AS "toolViews"') && text.includes('GROUP BY 1')) {
       return [{ date: '2026-10-02', visitors: 9, sessions: 10, toolViews: 12, exports: 5 }];
     }
@@ -154,6 +165,23 @@ describe('SiteToolsService.report', () => {
       expect(x.values).toEqual(expect.arrayContaining(IN_APP_BROWSERS));
     }
     expect(report.inApp).toEqual({ sessions: { value: 12, prev: 5 }, opened: { value: 4, prev: 1 } });
+  });
+
+  it('lists the Instagram accounts results were signed with, latest first, with the visit to open', async () => {
+    const { service, queries } = setup();
+    const report = await service.report(q);
+    const sql = queries.find((x) => x.sql.includes('AS "handle"'));
+    expect(sql?.sql).toContain(`e."props"->>'ig' IS NOT NULL`);
+    expect(sql?.sql).toContain('ORDER BY max(e."createdAt") DESC');
+    expect(report.accounts).toEqual([
+      {
+        handle: 'anna.beauty',
+        exports: 3,
+        tools: ['freeSlots', 'priceList'],
+        lastAt: '2026-10-05T10:00:00.000Z',
+        sessionId: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+      },
+    ]);
   });
 
   it('never splices a prop name into the SQL text', async () => {

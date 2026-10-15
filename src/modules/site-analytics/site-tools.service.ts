@@ -96,6 +96,7 @@ export class SiteToolsService {
       errors,
       inApp,
       inAppBefore,
+      accounts,
       platform,
       platformBefore,
       bySpot,
@@ -112,6 +113,7 @@ export class SiteToolsService {
       this.errors(q, tools),
       this.inAppKpis(q, tools),
       this.inAppKpis(prev, tools),
+      this.accounts(q, tools),
       this.platformKpis(q, web),
       this.platformKpis(prev, web),
       this.platformBySpot(q, web),
@@ -149,6 +151,7 @@ export class SiteToolsService {
         sessions: kpi(inApp.sessions, inAppBefore.sessions),
         opened: kpi(inApp.opened, inAppBefore.opened),
       },
+      accounts: accounts.map((a) => ({ ...a, lastAt: a.lastAt.toISOString() })),
       toPlatform: {
         visits: kpi(platform.visits, platformBefore.visits),
         signupStarts: kpi(platform.signupStarts, platformBefore.signupStarts),
@@ -307,6 +310,27 @@ export class SiteToolsService {
       JOIN "site_sessions" s ON s."id" = e."sessionId"
       WHERE ${eventsIn(w)} AND ${audience(a)}`;
     return row;
+  }
+
+  /**
+   * The Instagram accounts results were signed with, latest first: how many
+   * exports each made, from which tools, and the visit of its latest one.
+   */
+  private accounts(w: Window, a: Audience) {
+    return this.prisma.$queryRaw<
+      { handle: string; exports: number; tools: string[]; lastAt: Date; sessionId: string }[]
+    >`
+      SELECT e."props"->>'ig' AS "handle",
+             count(*)::int AS "exports",
+             array_agg(DISTINCT e."props"->>'tool') AS "tools",
+             max(e."createdAt") AS "lastAt",
+             (array_agg(e."sessionId"::text ORDER BY e."createdAt" DESC))[1] AS "sessionId"
+      FROM "site_events" e
+      JOIN "site_sessions" s ON s."id" = e."sessionId"
+      WHERE e."name" = 'tool_export' AND ${eventsIn(w)} AND ${audience(a)} AND e."props"->>'ig' IS NOT NULL
+      GROUP BY 1
+      ORDER BY max(e."createdAt") DESC
+      LIMIT 100`;
   }
 
   private errors(w: Window, a: Audience) {

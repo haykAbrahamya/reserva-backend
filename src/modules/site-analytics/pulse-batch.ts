@@ -64,6 +64,16 @@ const word = (max: number) =>
 const exportVia = z.enum(['share', 'download', 'pdf', 'whatsapp', 'viber', 'copy', 'hold']);
 /** Small counts: rows in a price list, slots in a story. */
 const count = z.number().int().min(0).max(1000);
+/**
+ * An Instagram username, bare and lower-case (the tools strip the @). The one
+ * typed value the catalog keeps, so the console can tell who made a result;
+ * one that does not fit is dropped on its own, never costing the export.
+ */
+const instagramUsername = z
+  .string()
+  .regex(/^[a-z0-9._]{1,30}$/)
+  .optional()
+  .catch(undefined);
 const bookClickFrom = z.enum([
   'hero',
   'nav',
@@ -136,8 +146,9 @@ export const EVENT_PROPS = {
   salons_filter: z.object({ cat: text(80).optional(), area: text(80).optional() }),
   salon_click: z.object({ slug: text(80), pos: z.number().int().min(0).max(1000).optional() }),
 
-  // Tools (tools.reserva.am). Choices and counts only — never what was typed:
-  // no salon names, prices, phones or notes.
+  // Tools (tools.reserva.am). Choices and counts — of what was typed, only the
+  // Instagram username a result is signed with (`ig`); never salon names,
+  // prices, phones or notes.
   tool_select: z.object({ tool: toolId, pos: count.optional() }),
   /** The first change to a tool's form in a page view. */
   tool_edit: z.object({ tool: toolId }),
@@ -150,6 +161,7 @@ export const EVENT_PROPS = {
     theme: word(24).optional(),
     fmt: word(24).optional(),
     n: count.optional(),
+    ig: instagramUsername,
   }),
   tool_error: z.object({ tool: toolId.optional(), code: word(40) }),
   /** A link from the tools into reserva.am (the booking-page pitch, header, footer). */
