@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { PushService } from './push.service';
-import { CurrentUser } from '@/auth/decorators';
+import { CurrentUser, NoSuperAdmin } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import { SubscribeDto, UnsubscribeDto } from './dto/push.dto';
 
@@ -18,6 +18,8 @@ export class PushController {
     return { publicKey: this.push.publicKey };
   }
 
+  // A super admin's browser must not receive the partner's notifications.
+  @NoSuperAdmin()
   @Post('subscribe')
   @HttpCode(204)
   @ApiOperation({ summary: 'Register this device for push notifications' })

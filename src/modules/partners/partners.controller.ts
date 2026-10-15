@@ -47,7 +47,8 @@ export class PartnersController {
   getOwn(@CurrentUser() user: AuthUser) {
     // Fire-and-forget "last active" heartbeat — this endpoint is fetched on
     // every backoffice load/refresh. Never block or fail the profile fetch.
-    void this.partners.touchLastSeen(user.id).catch(() => undefined);
+    // A super admin looking in is not the partner being active.
+    if (!user.impersonatedBy) void this.partners.touchLastSeen(user.id).catch(() => undefined);
     return this.partners.getOwn(user.partnerId);
   }
 

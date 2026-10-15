@@ -1544,6 +1544,11 @@ model PlatformUser {
   passwordHash       String
   mustChangePassword Boolean @default(false)
 
+  /// Super admin: may sign in to the partner backoffice and act as ANY partner's
+  /// admin (auth/super-admin). Granted by an owner in the console only, never
+  /// by default — and checked against this column on every request it makes.
+  superAdmin Boolean @default(false)
+
   active    Boolean   @default(true)
   lastLogin DateTime?
   createdAt DateTime  @default(now())
@@ -1552,9 +1557,28 @@ model PlatformUser {
 
   refreshTokens     PlatformRefreshToken[]
   pushSubscriptions PlatformPushSubscription[]
+  superAdminVisits  SuperAdminVisit[]
 
   @@index([active])
   @@map("platform_users")
+}
+
+/// Audit trail: each time a super admin entered a partner's backoffice — who,
+/// which partner, and the partner's admin they acted as. Written on every
+/// entry or switch; never updated.
+model SuperAdminVisit {
+  id             String   @id
+  platformUserId String
+  partnerId      String
+  /// The partner's admin User the session acted as.
+  actingUserId   String
+  createdAt      DateTime @default(now())
+
+  platformUser PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, createdAt])
+  @@index([platformUserId, createdAt])
+  @@map("super_admin_visits")
 }
 
 /// Hashed, rotatable refresh tokens for platform sessions.

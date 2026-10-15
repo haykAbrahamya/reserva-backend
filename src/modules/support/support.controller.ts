@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { CurrentUser } from '@/auth/decorators';
+import { CurrentUser, NoSuperAdmin } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import { SupportService } from './support.service';
 import { SendSupportMessageDto, SupportHistoryQueryDto } from './dto/support.dto';
@@ -37,6 +37,8 @@ export class SupportController {
   }
 
   @ApiOperation({ summary: 'Mark platform replies as read' })
+  // The partner's conversation with Reserva: a super admin may read it, never mark it read or write in it.
+  @NoSuperAdmin()
   @Post('read')
   async read(@CurrentUser() user: AuthUser) {
     await this.support.partnerMarkRead(user.partnerId);
@@ -44,6 +46,7 @@ export class SupportController {
   }
 
   @ApiOperation({ summary: 'Send a support message' })
+  @NoSuperAdmin()
   @Post('messages')
   send(@CurrentUser() user: AuthUser, @Body() dto: SendSupportMessageDto) {
     return this.support.sendMessage({

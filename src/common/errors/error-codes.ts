@@ -17,6 +17,10 @@ export enum ErrorCode {
   TOKEN_EXPIRED = 'TOKEN_EXPIRED',
   TOKEN_INVALID = 'TOKEN_INVALID',
   FORBIDDEN = 'FORBIDDEN',
+  /** A super admin signed in as a partner tried something only the partner's own people may do. */
+  NOT_AS_SUPER_ADMIN = 'NOT_AS_SUPER_ADMIN',
+  /** A super admin chose a partner that has no active admin to act as. */
+  NO_PARTNER_ADMIN = 'NO_PARTNER_ADMIN',
   WRONG_CURRENT_PASSWORD = 'WRONG_CURRENT_PASSWORD',
 
   // Domain — uniqueness / conflicts

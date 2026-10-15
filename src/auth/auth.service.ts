@@ -41,6 +41,8 @@ export interface PublicUser {
  */
 export interface MeResponse extends PublicUser {
   products: PartnerProductView[];
+  /** The super admin signed in as this user, when one is — the backoffice says so on screen. */
+  superAdmin: { id: string; name: string } | null;
 }
 
 @Injectable()
@@ -114,11 +116,20 @@ export class AuthService {
     });
   }
 
-  async me(userId: string): Promise<MeResponse> {
+  async me(userId: string, impersonatedBy?: string): Promise<MeResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw AppException.notFound('User not found');
     const products = await this.products.listFor(user.partnerId);
-    return { ...toPublicUser(user), products };
+    const superAdmin = impersonatedBy
+      ? await this.prisma.platformUser.findUnique({ where: { id: impersonatedBy }, select: { id: true, name: true } })
+      : null;
+    return {
+      ...toPublicUser(user),
+      // Never ask a super admin to change the partner admin's password.
+      ...(superAdmin ? { mustChangePassword: false } : {}),
+      products,
+      superAdmin,
+    };
   }
 
   async changePassword(userId: string, current: string, next: string): Promise<void> {

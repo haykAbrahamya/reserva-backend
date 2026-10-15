@@ -5,6 +5,9 @@ import { AuthController } from './auth.controller';
 import { PasswordService } from './password.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { SuperAdminController } from './super-admin/super-admin.controller';
+import { SuperAdminService } from './super-admin/super-admin.service';
+import { SuperAdminGuard } from './super-admin/super-admin.guard';
 
 /**
  * Global so JwtModule, PasswordService and the guards are available app-wide.
@@ -14,8 +17,8 @@ import { RolesGuard } from './guards/roles.guard';
 @Global()
 @Module({
   imports: [JwtModule.register({})],
-  controllers: [AuthController],
-  providers: [AuthService, PasswordService, JwtAuthGuard, RolesGuard],
+  controllers: [AuthController, SuperAdminController],
+  providers: [AuthService, PasswordService, JwtAuthGuard, RolesGuard, SuperAdminService, SuperAdminGuard],
   exports: [AuthService, PasswordService, JwtModule, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

@@ -53,6 +53,7 @@ export class PlatformStaffService {
         role: dto.role,
         passwordHash,
         mustChangePassword: !dto.password,
+        superAdmin: dto.superAdmin,
       },
     });
     return { user: toPublic(user), otp: generatedOtp };
@@ -79,6 +80,8 @@ export class PlatformStaffService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.role !== undefined && { role: dto.role }),
         ...(dto.active !== undefined && { active: dto.active }),
+        // Withdrawn at once everywhere: every super admin request re-reads this column.
+        ...(dto.superAdmin !== undefined && { superAdmin: dto.superAdmin }),
       },
     });
     return toPublic(updated);
@@ -142,6 +145,8 @@ export interface PublicStaff {
   active: boolean;
   lastLogin: Date | null;
   mustChangePassword: boolean;
+  /** May sign in to the partner backoffice as any partner. */
+  superAdmin: boolean;
   createdAt: Date;
 }
 
@@ -154,6 +159,7 @@ function toPublic(u: PlatformUser): PublicStaff {
     active: u.active,
     lastLogin: u.lastLogin,
     mustChangePassword: u.mustChangePassword,
+    superAdmin: u.superAdmin,
     createdAt: u.createdAt,
   };
 }

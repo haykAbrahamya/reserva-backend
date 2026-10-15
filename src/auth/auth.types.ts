@@ -7,6 +7,12 @@ export interface JwtPayload {
   role: UserRole;
   locationId: string | null;
   type: 'access';
+  /**
+   * Set only on a super admin's session (auth/super-admin): the platform user
+   * acting as this partner's admin. Re-checked against the database on every
+   * request, so withdrawing the right takes effect at once.
+   */
+  imp?: string;
   iat?: number;
   exp?: number;
 }
@@ -18,4 +24,6 @@ export interface AuthUser {
   role: UserRole;
   /** Managers are scoped to one branch; admins have null. */
   locationId: string | null;
+  /** The super admin (platform user id) signed in as this partner's admin, if one is. */
+  impersonatedBy?: string;
 }

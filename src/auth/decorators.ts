@@ -26,6 +26,16 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 export const PRODUCT_KEY = 'requiredProduct';
 export const RequiresProduct = (product: ProductKey) => SetMetadata(PRODUCT_KEY, product);
 
+/**
+ * Refused while a super admin is signed in as the partner (JwtAuthGuard):
+ * actions that belong to the partner's own people and would act on their
+ * behalf without them — changing their password, sending or reading their
+ * support chat, clearing their notifications, receiving their push messages.
+ * Everything else a partner admin can do, a super admin can too.
+ */
+export const NO_SUPER_ADMIN_KEY = 'noSuperAdmin';
+export const NoSuperAdmin = () => SetMetadata(NO_SUPER_ADMIN_KEY, true);
+
 /** Injects the authenticated principal: `@CurrentUser() user: AuthUser`. */
 export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthUser => {

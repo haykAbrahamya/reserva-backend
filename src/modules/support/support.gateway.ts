@@ -10,6 +10,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
+import { PrismaService } from '@/prisma/prisma.service';
 import { buildOriginChecker } from '@/common/utils/cors-origin';
 import type { Env } from '@/config/env.config';
 import type { JwtPayload } from '@/auth/auth.types';
@@ -26,6 +27,8 @@ interface SupportSocket extends Socket {
     side: 'partner' | 'platform';
     userId: string;
     partnerId?: string; // partner side only
+    /** A super admin signed in as the partner: may watch the chat, never type in it. */
+    superAdmin?: boolean;
   };
 }
 
@@ -49,6 +52,7 @@ export class SupportGateway implements OnGatewayInit, OnGatewayConnection {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private isAllowedOrigin = (_origin: string | undefined): boolean => true;
@@ -77,7 +81,9 @@ export class SupportGateway implements OnGatewayInit, OnGatewayConnection {
 
       if (payload.type === 'access') {
         const p = payload as JwtPayload;
-        client.data = { side: 'partner', userId: p.sub, partnerId: p.partnerId };
+        // A super admin session: the platform user behind it must still hold the right, as on REST.
+        if (p.imp !== undefined && !(await this.isSuperAdmin(p.imp))) return this.reject(client, 'auth_failed');
+        client.data = { side: 'partner', userId: p.sub, partnerId: p.partnerId, ...(p.imp ? { superAdmin: true } : {}) };
         await client.join(partnerRoom(p.partnerId));
       } else if (payload.type === 'platform-access') {
         const p = payload as PlatformJwtPayload;
@@ -89,6 +95,15 @@ export class SupportGateway implements OnGatewayInit, OnGatewayConnection {
     } catch {
       return this.reject(client, 'auth_failed');
     }
+  }
+
+  private async isSuperAdmin(platformUserId: unknown): Promise<boolean> {
+    if (typeof platformUserId !== 'string' || !platformUserId) return false;
+    const staff = await this.prisma.platformUser.findUnique({
+      where: { id: platformUserId },
+      select: { active: true, deletedAt: true, superAdmin: true },
+    });
+    return !!staff && staff.active && !staff.deletedAt && staff.superAdmin;
   }
 
   private reject(client: Socket, reason: string) {
@@ -118,6 +133,8 @@ export class SupportGateway implements OnGatewayInit, OnGatewayConnection {
     @MessageBody() data: { threadPartnerId?: string; typing: boolean },
   ) {
     if (client.data?.side === 'partner') {
+      // A super admin watching must not look like the partner typing.
+      if (client.data.superAdmin) return;
       const partnerId = client.data.partnerId!;
       this.server.to(PLATFORM_ROOM).emit('support:typing', {
         from: 'partner',

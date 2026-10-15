@@ -1,7 +1,7 @@
 import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
-import { CurrentUser } from '@/auth/decorators';
+import { CurrentUser, NoSuperAdmin } from '@/auth/decorators';
 import type { AuthUser } from '@/auth/auth.types';
 import { ListNotificationsQueryDto } from './dto/notification.dto';
 import { RAW_RESPONSE } from '@/common/interceptors/transform.interceptor';
@@ -25,6 +25,8 @@ export class NotificationsController {
     return this.notifications.unreadCount(user.id);
   }
 
+  // Reading as a super admin must not clear what the partner has not seen.
+  @NoSuperAdmin()
   @Patch(':id/read')
   @HttpCode(204)
   @ApiOperation({ summary: 'Mark one notification read' })
@@ -32,6 +34,7 @@ export class NotificationsController {
     await this.notifications.markRead(user.id, id);
   }
 
+  @NoSuperAdmin()
   @Post('read-all')
   @HttpCode(204)
   @ApiOperation({ summary: 'Mark all my notifications read' })

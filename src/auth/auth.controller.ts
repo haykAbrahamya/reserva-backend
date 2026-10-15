@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { Public, CurrentUser } from './decorators';
+import { Public, CurrentUser, NoSuperAdmin } from './decorators';
 import { LoginDto, RefreshDto, ChangePasswordDto } from './dto/auth.dto';
 import type { AuthUser } from './auth.types';
 
@@ -38,10 +38,12 @@ export class AuthController {
   @Get('me')
   @ApiOperation({ summary: 'Get the current authenticated user' })
   me(@CurrentUser() user: AuthUser) {
-    return this.auth.me(user.id);
+    return this.auth.me(user.id, user.impersonatedBy);
   }
 
   @ApiBearerAuth()
+  // It would change the partner admin's password, not the super admin's.
+  @NoSuperAdmin()
   @Post('change-password')
   @HttpCode(204)
   @ApiOperation({ summary: 'Change your own password (revokes other sessions)' })
