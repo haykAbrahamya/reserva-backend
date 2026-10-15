@@ -160,6 +160,16 @@ describe('parseBatch — tools.reserva.am', () => {
     }
   });
 
+  it('keeps the contact line as typed — phone, name or username', () => {
+    const base = { tool: 'priceList', via: 'download' };
+    const contact = 'Mane +374 91 123456 inst: mane.nails';
+    expect(parseEvent(event('tool_export', { ...base, contact }))?.props).toEqual({ ...base, contact });
+    // Too long, or not text: dropped on its own, the export kept.
+    for (const bad of ['a'.repeat(61), 42]) {
+      expect(parseEvent(event('tool_export', { ...base, contact: bad }))?.props).toEqual(base);
+    }
+  });
+
   it('accepts any well-formed tool id, so a new tool ships without a release here', () => {
     expect(parseEvent(event('tool_edit', { tool: 'loyaltyCard' }))?.props).toEqual({ tool: 'loyaltyCard' });
     for (const tool of ['Price', 'price list', 'p', '1tool', 'a'.repeat(33)]) {

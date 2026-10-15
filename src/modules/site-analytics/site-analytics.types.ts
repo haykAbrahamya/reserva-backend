@@ -340,7 +340,7 @@ export interface AnalyticsTools {
   /**
    * Who made something: the Instagram accounts results were signed with
    * (tool_export `ig`), latest first (top 100). Only results whose contact line
-   * held an Instagram — a phone number is never recorded.
+   * held an Instagram; the line itself, as typed, is on each export (`contact`).
    */
   accounts: {
     /** Bare username, lower-case: instagram.com/<handle>. */
