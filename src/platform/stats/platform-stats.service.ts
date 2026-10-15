@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { billingWhere } from '../partners/billing';
 
 /** Aggregate platform-wide numbers for the internal-backoffice dashboard. */
 @Injectable()
@@ -10,7 +11,8 @@ export class PlatformStatsService {
     const since = new Date();
     since.setDate(since.getDate() - 30);
 
-    const [partners, activePartners, recentPartners, locations, specialists, bookings, staff, latest] =
+    const live = { deletedAt: null };
+    const [partners, activePartners, recentPartners, locations, specialists, bookings, staff, latest, onTrial, paymentDue, newLeads] =
       await this.prisma.$transaction([
         this.prisma.partner.count({ where: { deletedAt: null } }),
         this.prisma.partner.count({ where: { deletedAt: null, active: true } }),
@@ -33,10 +35,15 @@ export class PlatformStatsService {
             createdAt: true,
           },
         }),
+        this.prisma.partner.count({ where: { AND: [live, billingWhere('trial')] } }),
+        this.prisma.partner.count({ where: { AND: [live, billingWhere('due')] } }),
+        this.prisma.lead.count({ where: { status: 'new' } }),
       ]);
 
     return {
       partners: { total: partners, active: activePartners, inactive: partners - activePartners, recent: recentPartners },
+      billing: { trial: onTrial, due: paymentDue },
+      leads: { new: newLeads },
       catalog: { locations, specialists, bookings },
       staff,
       recentPartners: latest,

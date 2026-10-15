@@ -22,6 +22,8 @@ import { PlatformSpecialtiesService } from './specialties/platform-specialties.s
 import { AnalyticsModule } from '@/modules/analytics/analytics.module';
 import { SiteAnalyticsModule } from '@/modules/site-analytics/site-analytics.module';
 import { SignupModule } from '@/modules/signup/signup.module';
+import { LeadsModule } from '@/modules/leads/leads.module';
+import { PlatformLeadsController } from './leads/platform-leads.controller';
 import { PlatformAuthGuard } from './guards/platform-auth.guard';
 import { PlatformRolesGuard } from './guards/platform-roles.guard';
 
@@ -32,9 +34,10 @@ import { PlatformRolesGuard } from './guards/platform-roles.guard';
  * PlatformAuthGuard, which verifies a distinct 'platform-access' token type.
  */
 @Module({
-  imports: [DemoRequestsModule, AnalyticsModule, SiteAnalyticsModule, SignupModule],
+  imports: [DemoRequestsModule, AnalyticsModule, SiteAnalyticsModule, SignupModule, LeadsModule],
   controllers: [
     PlatformAuthController,
+    PlatformLeadsController,
     PlatformPartnersController,
     PlatformStaffController,
     PlatformStatsController,

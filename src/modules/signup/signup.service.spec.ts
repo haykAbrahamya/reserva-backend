@@ -11,6 +11,7 @@ function serviceWithNoPartners() {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, findUnique };
 }

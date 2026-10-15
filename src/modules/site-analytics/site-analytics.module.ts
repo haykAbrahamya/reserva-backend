@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LeadsModule } from '@/modules/leads/leads.module';
 import { PulseController } from './pulse.controller';
 import { SiteIngestService } from './site-ingest.service';
 import { PartnerSlugCache } from './partner-slug-cache.service';
@@ -15,6 +16,8 @@ import { SiteToolsService } from './site-tools.service';
  * for old cached clients.
  */
 @Module({
+  // A tools export signed with a contact line becomes a lead.
+  imports: [LeadsModule],
   controllers: [PulseController],
   providers: [
     SiteIngestService,

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { geoFromIp, parseUserAgent } from '@/common/utils/visitor';
+import { LeadsService, type ToolExport } from '@/modules/leads/leads.service';
 import { DEFAULT_PULSE_KEY, openPulse, parsePulseKey } from './pulse-codec';
 import { parseBatch, type PulseBatch } from './pulse-batch';
 import { deriveChannel, isBotUserAgent, referrerHostOf } from './traffic-source';
@@ -41,6 +42,7 @@ export class SiteIngestService {
     private readonly prisma: PrismaService,
     private readonly partners: PartnerSlugCache,
     config: ConfigService,
+    private readonly leads: LeadsService,
   ) {
     // The env schema already rejects a malformed override at boot.
     this.key =
@@ -118,6 +120,10 @@ export class SiteIngestService {
       // A little slack over the defaults when the pool is busy with reports.
       { maxWait: 5_000, timeout: 10_000 },
     );
+
+    // A tools result signed with a contact line is a lead. Never throws.
+    const signed = batch.events.flatMap((e) => signedExport(e.name, e.props, now));
+    if (signed.length) await this.leads.fromToolExports(batch.sessionId, signed);
   }
 
   private sessionRow(
@@ -157,6 +163,13 @@ export class SiteIngestService {
       site: s.site ?? 'web',
     };
   }
+}
+
+/** A tools export signed with a contact line, for the leads — none for any other event. */
+export function signedExport(name: string, props: Record<string, unknown>, at: Date): ToolExport[] {
+  const { contact, ig, tool } = props;
+  if (name !== 'tool_export' || typeof contact !== 'string' || !contact.trim() || typeof tool !== 'string') return [];
+  return [{ contact, ig: typeof ig === 'string' ? ig : undefined, tool, at }];
 }
 
 /** The client's clock for ordering, or null when it is missing or implausible. */

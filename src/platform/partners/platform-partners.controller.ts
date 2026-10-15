@@ -19,6 +19,7 @@ import {
   PartnerBookingsQueryDto,
   PlatformUpdateUserDto,
   PlatformResetPasswordDto,
+  SetPartnerBillingDto,
 } from './dto/platform-partner.dto';
 
 @ApiTags('Platform · Partners')
@@ -57,6 +58,12 @@ export class PlatformPartnersController {
   @ApiOperation({ summary: 'Enable or disable a partner' })
   setActive(@Param('id') id: string, @Body() dto: SetPartnerActiveDto) {
     return this.partners.setActive(id, dto.active);
+  }
+
+  @Patch(':id/billing')
+  @ApiOperation({ summary: 'Billing: start the free trial, mark a month paid, or set the dates' })
+  setBilling(@Param('id') id: string, @Body() dto: SetPartnerBillingDto) {
+    return this.partners.setBilling(id, dto);
   }
 
   @Patch(':id/marketplace')

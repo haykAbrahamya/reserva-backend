@@ -191,6 +191,14 @@ model Partner {
   /// hidden and public registration is rejected. Default off.
   coursesEnabled Boolean @default(false)
 
+  /// Billing, kept by platform staff in the internal console. Calendar days:
+  /// the free trial's first and last day, and the last day paid for. None set
+  /// = billing not tracked yet. The status (trial / paid / payment due) is
+  /// derived from these, never stored.
+  trialStartedAt DateTime? @db.Date
+  trialEndsAt    DateTime? @db.Date
+  paidUntil      DateTime? @db.Date
+
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1629,6 +1637,77 @@ model DemoRequest {
 
   @@index([status, createdAt])
   @@map("demo_requests")
+}
+
+// ── Leads (internal console: potential partners to reach out to) ──
+
+/// Where a lead came from.
+enum LeadSource {
+  /// Filled in the sign-up form: a pending registration.
+  signup
+  /// The website's "Book a demo" form.
+  demo
+  /// Exported a result from tools.reserva.am with a contact line on it.
+  tools
+  /// Added by platform staff.
+  manual
+}
+
+/// Where we stand with a lead.
+enum LeadStatus {
+  new
+  contacted
+  interested
+  /// Became a partner.
+  partner
+  /// Not interested.
+  lost
+}
+
+/// A potential partner: gathered automatically from the sign-up form, demo
+/// requests and the free tools, or added by hand — one work list for staff,
+/// with where each one stands and what was said.
+model Lead {
+  id        String     @id
+  source    LeadSource
+  /// The record it came from: a pending registration or demo request id, or a
+  /// tools contact line (lower-cased). Null for a lead added by hand.
+  sourceRef String?
+  status    LeadStatus @default(new)
+
+  name      String?
+  company   String?
+  phone     String?
+  email     String?
+  /// Bare username, lower-case: instagram.com/<instagram>.
+  instagram String?
+  /// A tools lead's contact line, exactly as typed ("Mane +374 91 123456").
+  contact   String?
+  /// Where it came from, in a phrase: the salon type and page address of a
+  /// sign-up, the note on a demo request.
+  context   String?
+  /// The tools a tools lead made something with (registry ids).
+  tools     String[]   @default([])
+  /// A tools lead's latest visit, to open its journey in Analytics.
+  sessionId String?
+  /// What staff noted: calls, replies, next steps.
+  notes     String?
+
+  /// The partner it became, once it did.
+  partnerId   String?
+  /// The platform user who added it by hand.
+  createdById String?
+
+  /// The lead's latest sign of interest — sign-up, demo request, export, or
+  /// being added. The work list's order.
+  lastActivityAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([source, sourceRef])
+  @@index([status, lastActivityAt])
+  @@index([lastActivityAt])
+  @@map("leads")
 }
 
 /// One row per page view on the public site (reserva.am). Written by the public

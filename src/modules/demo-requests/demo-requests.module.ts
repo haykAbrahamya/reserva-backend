@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LeadsModule } from '@/modules/leads/leads.module';
 import { DemoRequestsService } from './demo-requests.service';
 import { DemoRequestsPublicController } from './demo-requests.public.controller';
 
@@ -8,6 +9,8 @@ import { DemoRequestsPublicController } from './demo-requests.public.controller'
  * PlatformModule (which imports this module to reuse the service).
  */
 @Module({
+  // Every request also becomes a lead.
+  imports: [LeadsModule],
   controllers: [DemoRequestsPublicController],
   providers: [DemoRequestsService],
   exports: [DemoRequestsService],

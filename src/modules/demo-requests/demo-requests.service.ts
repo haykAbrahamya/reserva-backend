@@ -3,6 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AppException } from '@/common/errors/app.exception';
 import { newId } from '@/common/ids';
 import { paginate, pageArgs } from '@/common/dto/pagination';
+import { LeadsService } from '@/modules/leads/leads.service';
 import type {
   CreateDemoRequestDto,
   ListDemoRequestsQueryDto,
@@ -16,11 +17,14 @@ const orNull = (v?: string) => {
 
 @Injectable()
 export class DemoRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly leads: LeadsService,
+  ) {}
 
   /** Public: store a demo lead. */
   async create(dto: CreateDemoRequestDto) {
-    await this.prisma.demoRequest.create({
+    const request = await this.prisma.demoRequest.create({
       data: {
         id: newId(),
         name: dto.name.trim(),
@@ -30,6 +34,7 @@ export class DemoRequestsService {
         notes: orNull(dto.notes),
       },
     });
+    await this.leads.fromDemoRequest(request);
     // Don't leak the row id to the public; a simple ack is enough.
     return { ok: true };
   }

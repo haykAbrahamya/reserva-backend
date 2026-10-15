@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LeadsModule } from '@/modules/leads/leads.module';
 import { SignupService } from './signup.service';
 import { SignupController } from './signup.controller';
 
@@ -7,6 +8,8 @@ import { SignupController } from './signup.controller';
  * AuthModule; MailService from the global MailModule.
  */
 @Module({
+  // Every sign-up is a lead until it is activated.
+  imports: [LeadsModule],
   controllers: [SignupController],
   providers: [SignupService],
   // Exported so the platform module can manually activate a pending signup.

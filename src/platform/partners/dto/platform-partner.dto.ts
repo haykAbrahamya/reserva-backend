@@ -6,8 +6,28 @@ export const listPlatformPartnersQuerySchema = paginationSchema.extend({
   search: z.string().trim().optional(),
   /** Filter by active state. Omit for all. */
   active: z.coerce.boolean().optional(),
+  /** Filter by where billing stands today (see platform/partners/billing.ts). */
+  billing: z.enum(['none', 'trial', 'paid', 'due']).optional(),
 });
 export class ListPlatformPartnersQueryDto extends createZodDto(listPlatformPartnersQuerySchema) {}
+
+/** A real calendar day, 'YYYY-MM-DD'. */
+const calendarDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((d) => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d, 'Not a real date');
+
+/**
+ * Billing: start the free trial, mark a month paid, or `set` the dates by hand
+ * — the dates are read for `set` only, where a missing or null one is cleared.
+ */
+export const setPartnerBillingSchema = z.object({
+  action: z.enum(['startTrial', 'markPaid', 'set']),
+  trialStartedAt: calendarDay.nullable().optional(),
+  trialEndsAt: calendarDay.nullable().optional(),
+  paidUntil: calendarDay.nullable().optional(),
+});
+export class SetPartnerBillingDto extends createZodDto(setPartnerBillingSchema) {}
 
 export const setPartnerActiveSchema = z.object({ active: z.boolean() });
 export class SetPartnerActiveDto extends createZodDto(setPartnerActiveSchema) {}

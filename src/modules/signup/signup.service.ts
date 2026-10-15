@@ -13,6 +13,7 @@ import { normalizePhone } from '@/common/utils/phone';
 import { assertSlugNotReserved, isReservedSlug } from '@/common/utils/reserved-slugs';
 import type { SignupDto } from './dto/signup.dto';
 import { ProductsService } from '@/modules/products/products.service';
+import { LeadsService } from '@/modules/leads/leads.service';
 
 const TOKEN_TTL_HOURS = 24;
 
@@ -37,6 +38,7 @@ export class SignupService {
     private readonly mail: MailService,
     private readonly config: ConfigService,
     private readonly products: ProductsService,
+    private readonly leads: LeadsService,
   ) {}
 
   /**
@@ -70,7 +72,7 @@ export class SignupService {
       where: { adminEmail: email, consumedAt: null },
     });
 
-    await this.prisma.pendingRegistration.create({
+    const pending = await this.prisma.pendingRegistration.create({
       data: {
         id: newId(),
         tokenHash,
@@ -87,6 +89,8 @@ export class SignupService {
         expiresAt,
       },
     });
+    // Before the email: a lead to follow up even if the link never arrives.
+    await this.leads.fromSignup(pending);
 
     const base = this.config.get<string>('BACKOFFICE_URL') || 'https://backoffice.reserva.am';
     const link = `${base}/activate?token=${rawToken}`;
@@ -154,7 +158,7 @@ export class SignupService {
     await this.assertPhoneFree(pending.adminPhone);
 
     const partnerId = newId();
-    return this.prisma.$transaction(async (tx) => {
+    const admin = await this.prisma.$transaction(async (tx) => {
       await tx.partner.create({
         data: {
           id: partnerId,
@@ -224,6 +228,10 @@ export class SignupService {
 
       return user;
     });
+
+    // Outside the transaction: a lead is bookkeeping, never a reason to undo an account.
+    await this.leads.signupActivated(pending.id, partnerId);
+    return admin;
   }
 
   // ── guards ────────────────────────────────────────────────

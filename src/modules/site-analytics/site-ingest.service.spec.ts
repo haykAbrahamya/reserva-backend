@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '@/prisma/prisma.service';
+import type { LeadsService } from '@/modules/leads/leads.service';
 import { DEFAULT_PULSE_KEY, parsePulseKey, sealPulse } from './pulse-codec';
 import { PartnerSlugCache } from './partner-slug-cache.service';
 import { SiteIngestService, clientTime } from './site-ingest.service';
@@ -82,9 +83,10 @@ function setup(
   };
   const prisma = db as unknown as PrismaService;
   const config = { get: () => '' } as unknown as ConfigService;
-  const service = new SiteIngestService(prisma, new PartnerSlugCache(prisma), config);
+  const leads = { fromToolExports: jest.fn(async () => undefined) };
+  const service = new SiteIngestService(prisma, new PartnerSlugCache(prisma), config, leads as unknown as LeadsService);
   const warn = jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
-  return { db, state, service, warn };
+  return { db, state, service, warn, leads };
 }
 
 let seq = 0;
@@ -204,6 +206,23 @@ describe('SiteIngestService.ingest', () => {
       'Mozilla/5.0 (compatible; Googlebot/2.1)',
     );
     expect(state.sessions.get(SID)).toMatchObject({ isBot: true, isInternal: true });
+  });
+
+  it('hands a tools export signed with a contact line to the leads — and nothing else', async () => {
+    const { service, leads } = setup();
+    const signed = ev('tool_export', { tool: 'priceList', via: 'download', ig: 'mane.nails', contact: 'Mane +374 91 123456 @mane.nails' });
+    const unsigned = ev('tool_export', { tool: 'freeSlots', via: 'share' });
+    const view = ev('page_view', { pt: 'tool', tool: 'priceList' });
+    await service.ingest(seal(batch([signed, unsigned, view], { site: 'tools' })), IP, IPHONE);
+
+    expect(leads.fromToolExports).toHaveBeenCalledTimes(1);
+    expect(leads.fromToolExports).toHaveBeenCalledWith(SID, [
+      { contact: 'Mane +374 91 123456 @mane.nails', ig: 'mane.nails', tool: 'priceList', at: expect.any(Date) },
+    ]);
+
+    const quiet = setup();
+    await quiet.service.ingest(seal(batch([unsigned, view], { site: 'tools' })), IP, IPHONE);
+    expect(quiet.leads.fromToolExports).not.toHaveBeenCalled();
   });
 
   it('files a visit under its site: tools.reserva.am names it, reserva.am names none', async () => {

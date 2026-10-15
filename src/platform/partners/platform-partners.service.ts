@@ -26,7 +26,9 @@ import type {
   ListPlatformPartnersQueryDto,
   PlatformUpdateUserDto,
   PlatformResetPasswordDto,
+  SetPartnerBillingDto,
 } from './dto/platform-partner.dto';
+import { billingOf, billingToday, billingWhere, dateOf, nextPaidUntil, trialFrom } from './billing';
 
 /** Default weekly hours for an auto-provisioned solo specialist (Mon–Sat 10–19). */
 const SOLO_DEFAULT_SCHEDULE = {
@@ -56,7 +58,7 @@ export class PlatformPartnersService {
   ) {}
 
   async list(q: ListPlatformPartnersQueryDto) {
-    const where: Prisma.PartnerWhereInput = {
+    const filters: Prisma.PartnerWhereInput = {
       deletedAt: null,
       ...(q.active !== undefined ? { active: q.active } : {}),
       ...(q.search
@@ -69,6 +71,7 @@ export class PlatformPartnersService {
           }
         : {}),
     };
+    const where: Prisma.PartnerWhereInput = q.billing ? { AND: [filters, billingWhere(q.billing)] } : filters;
     const include = {
       _count: {
         select: {
@@ -397,6 +400,39 @@ export class PlatformPartnersService {
     return this.get(id);
   }
 
+  /**
+   * Billing, as staff keep it: start the free trial (a month from today), mark
+   * a month paid, or set the dates by hand to correct them. Never changes what
+   * the partner can use.
+   */
+  async setBilling(id: string, dto: SetPartnerBillingDto) {
+    const current = await this.prisma.partner.findFirst({
+      where: { id, deletedAt: null },
+      select: { trialStartedAt: true, trialEndsAt: true, paidUntil: true },
+    });
+    if (!current) throw AppException.notFound('Partner not found');
+
+    const today = billingToday();
+    let data: Prisma.PartnerUpdateInput;
+    if (dto.action === 'startTrial') {
+      const trial = trialFrom(today);
+      data = { trialStartedAt: dateOf(trial.trialStartedAt), trialEndsAt: dateOf(trial.trialEndsAt) };
+    } else if (dto.action === 'markPaid') {
+      data = { paidUntil: dateOf(nextPaidUntil(current, today)) };
+    } else {
+      if (dto.trialStartedAt && dto.trialEndsAt && dto.trialStartedAt > dto.trialEndsAt) {
+        throw AppException.badRequest(ErrorCode.VALIDATION_FAILED, 'The trial cannot end before it starts');
+      }
+      data = {
+        trialStartedAt: dto.trialStartedAt ? dateOf(dto.trialStartedAt) : null,
+        trialEndsAt: dto.trialEndsAt ? dateOf(dto.trialEndsAt) : null,
+        paidUntil: dto.paidUntil ? dateOf(dto.paidUntil) : null,
+      };
+    }
+    await this.prisma.partner.update({ where: { id }, data });
+    return this.get(id);
+  }
+
   /** Feature/unfeature a salon in the public marketplace (/salons). Platform-only. */
   async setMarketplace(id: string, listed: boolean) {
     await this.assertExists(id);
@@ -658,11 +694,16 @@ type PartnerWithCount = {
   _count?: Record<string, number>;
 } & Record<string, unknown>;
 
-/** Flatten Prisma _count into top-level counts for the API shape. */
+/** Flatten Prisma _count into top-level counts, and the billing dates into where billing stands. */
 function serialize<T extends PartnerWithCount>(partner: T) {
-  const { _count, ...rest } = partner;
+  const { _count, trialStartedAt, trialEndsAt, paidUntil, ...rest } = partner;
   return {
     ...rest,
+    billing: billingOf({
+      trialStartedAt: (trialStartedAt ?? null) as Date | null,
+      trialEndsAt: (trialEndsAt ?? null) as Date | null,
+      paidUntil: (paidUntil ?? null) as Date | null,
+    }),
     counts: {
       locations: _count?.locations ?? 0,
       specialists: _count?.specialists ?? 0,
