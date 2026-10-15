@@ -24,7 +24,7 @@ import {
 } from './dto/partner.dto';
 
 // 8 MB cap on the raw upload (sharp shrinks it to WebP afterwards).
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /** Narrow an untrusted `list` string to a valid photo list (default fallback). */
 function toList(v: unknown, fallback: 'gallery' | 'works'): 'gallery' | 'works' {

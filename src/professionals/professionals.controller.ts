@@ -34,7 +34,7 @@ import {
  * bytes reach the handler, so an oversized file is refused without ever being
  * buffered in full.
  */
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /**
  * Professional accounts — everything the job-seeking side of

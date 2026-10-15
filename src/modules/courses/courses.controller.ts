@@ -29,7 +29,7 @@ import {
 } from './dto/enrollment.dto';
 
 // 8 MB cap on the raw upload (sharp shrinks it to a WebP afterwards).
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /**
  * Backoffice course management. Routes are grouped by resource:

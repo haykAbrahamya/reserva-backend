@@ -27,7 +27,7 @@ import {
 import { CreateTimeOffDto, UpdateTimeOffDto } from './dto/time-off.dto';
 
 // 8 MB cap on the raw upload (sharp shrinks it to a square WebP afterwards).
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 @ApiTags('Specialists')
 @ApiBearerAuth()
